@@ -1,15 +1,11 @@
-# Studium-Booking (.NET Microservice)
+# Studium-Booking (Deployed with 3 Replicas)
 
-Scope: RF9–RF17, RF19, RF20, RNF4, RNF13.
+Stack: .NET + PostgreSQL (db-booking).
 
-Responsibilities:
+Scope: Real-time room status (UC009), reservations and conflict validation (UC012–UC015), waitlist (UC016), QR Code check-in (UC017), and occupancy reports (UC020).   
 
-Real-Time Availability & Agenda: Serves live room status (UC009), 30-minute agenda slots (UC010), and advanced filtering (UC011).
+Rubric R2 & R3 Anchor:
 
-Transactional Booking Engine: Enforces the max 2-hour duration and max 2 active reservations limit (UC014), prevents overlapping slots with strict database locking and idempotency keys (UC012, UC013, RNF4), and handles cancellations/modifications (UC015) and user history (UC019).
-
-QR Code Check-In & Waitlist: Validates door QR scans within the 15-minute window (UC017) and manages the FIFO waitlist queue (UC016).
-
-SQS Delay Timers & SNS Fan-Out: Uses SQS Delay Queues (or EventBridge Scheduler) for the 15-minute check-in reminder, 15-minute no-show auto-cancellation, and 5-minute waitlist confirmation timeout, publishing lifecycle events (ReservationConfirmed, NoShowCancelled, WaitlistSlotAvailable) to SNS.
-
-Occupancy Analytics: Aggregates check-in hours, peak times, and no-show percentages to generate and export admin reports in PDF/spreadsheet formats (UC020 / W08).
+* Runs with 3 Pod replicas in EKS to demonstrate horizontal scaling and load balancing.
+* Calls Studium-Catalog and Studium-Users synchronously via REST over Kubernetes ClusterIP DNS when a reservation is requested.
+* Publishes ReservationConfirmed, NoShowCancelled, and WaitlistSlotAvailable to the SNS Topic (studium-booking-events) and uses SQS Delay Queues for the 15-minute no-show timer.   
