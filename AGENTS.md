@@ -85,7 +85,7 @@
 ---
 
 ## 3. Recent Changes History
-- **2026-11-08 (Initial Implementation):**
+- **2026-11-08 (Initial Implementation & Deployment):**
   - Scaffolded 5-project Clean Architecture solution with .NET 10, CPM, and strict nullability.
   - Implemented Domain entities: `Booking`, `ReservationTimeSlot`, `BookingAuditLog`, `PenaltyRecord`, `WaitlistEntry`, `ReplicatedRoom`, `ReplicatedMaintenanceBlock`, `ReplicatedOperatingHours`.
   - Implemented Data layer with `BookingDbContext` and isolated Fluent API configurations.
@@ -95,3 +95,4 @@
   - Generated Wolverine static handler codegen via `codegen write`.
   - Added 29 passing xUnit unit tests across domain and DTO logic.
   - Added production-grade Dockerfile, `k8s/deployment.yaml` with 3 replicas and HPA, and `.github/workflows/ci-cd.yml` with dynamic secret assembly.
+  - Successfully verified CI/CD build and deployed 3 live replicas to Amazon EKS in the `studium` namespace.
