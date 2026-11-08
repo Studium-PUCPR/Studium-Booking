@@ -1,0 +1,121 @@
+name: Build & Deploy Studium-Booking
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION: node24
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore Studium-Booking.sln
+
+      - name: Run Tests
+        run: dotnet test Studium-Booking.sln --no-restore --verbosity normal
+
+  build-and-deploy:
+    name: Build Docker Image & Deploy to EKS
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-2' }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Docker Image (with Wolverine Pre-Codegen)
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: studium-booking
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Update Kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --name studium-eks-cluster --region ${{ secrets.AWS_REGION || 'us-east-2' }}
+
+      - name: Sync Secrets from AWS Parameter Store & Secrets Manager
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-2' }}
+        run: |
+          # Ensure target namespace exists
+          kubectl create namespace studium --dry-run=client -o yaml | kubectl apply -f -
+
+          # Fetch SSM parameters
+          COGNITO_AUTHORITY=$(aws ssm get-parameter --name "/studium/users/cognito/authority" --query "Parameter.Value" --output text --region $AWS_REGION)
+          COGNITO_CLIENT_ID=$(aws ssm get-parameter --name "/studium/users/cognito/client-id" --query "Parameter.Value" --output text --region $AWS_REGION)
+
+          # Fetch RDS credentials from Secrets Manager (auto-populated by CDK)
+          DB_SECRET=$(aws secretsmanager get-secret-value --secret-id "studium/database/postgres" --query "SecretString" --output text --region $AWS_REGION)
+          DB_PASSWORD=$(echo "$DB_SECRET" | jq -r .password)
+          DB_HOST=$(echo "$DB_SECRET" | jq -r .host)
+          DB_PORT=$(echo "$DB_SECRET" | jq -r .port)
+          DB_USER=$(echo "$DB_SECRET" | jq -r .username)
+          DB_NAME="studium_booking"
+
+          CONNECTION_STRING="Host=$DB_HOST;Port=$DB_PORT;Database=$DB_NAME;Username=$DB_USER;Password=$DB_PASSWORD"
+
+          # Populate or update Kubernetes Secret
+          kubectl create secret generic studium-booking-secrets \
+            -n studium \
+            --from-literal=DefaultConnection="$CONNECTION_STRING" \
+            --from-literal=CognitoAuthority="$COGNITO_AUTHORITY" \
+            --from-literal=CognitoClientId="$COGNITO_CLIENT_ID" \
+            --from-literal=AwsAccessKeyId="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            --from-literal=AwsSecretAccessKey="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy to Kubernetes
+        run: |
+          sed -i "s|IMAGE_PLACEHOLDER|$IMAGE_URI|g" k8s/deployment.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl rollout status deployment/studium-booking -n studium --timeout=300s
+
+      - name: Debug Kubernetes Pods on Failure
+        if: failure()
+        run: |
+          echo "=== POD STATUS ==="
+          kubectl get pods -n studium -o wide || true
+          echo "=== EVENTS ==="
+          kubectl get events -n studium --sort-by='.metadata.creationTimestamp' || true
+          echo "=== POD DESCRIBE ==="
+          kubectl describe pods -n studium || true
+          echo "=== CONTAINER LOGS ==="
+          kubectl logs -n studium -l app=studium-booking --all-containers --tail=200 || true

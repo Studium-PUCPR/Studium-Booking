@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: studium
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: studium-booking-config
+  namespace: studium
+data:
+  ASPNETCORE_ENVIRONMENT: "Production"
+  AWS__Region: "us-east-2"
+  AWS__SQS__BookingQueueName: "studium-booking-events-queue"
+  AWS__SQS__UsersQueueName: "studium-users-events-queue"
+  AWS__SQS__NotificationsQueueName: "studium-notifications-queue"
+  Booking__DefaultTimeZone: "America/Sao_Paulo"
+  Booking__GraceMinutesBeforeCheckIn: "15"
+  Booking__GraceMinutesAfterCheckIn: "15"
+  Booking__MaxNoShowsBeforeSuspension: "3"
+  Booking__DefaultSuspensionDays: "7"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: studium-booking
+  namespace: studium
+  labels:
+    app: studium-booking
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: studium-booking
+  template:
+    metadata:
+      labels:
+        app: studium-booking
+    spec:
+      containers:
+        - name: studium-booking
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: studium-booking-config
+          env:
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: studium-booking-secrets
+                  key: DefaultConnection
+            - name: AWS__Cognito__Authority
+              valueFrom:
+                secretKeyRef:
+                  name: studium-booking-secrets
+                  key: CognitoAuthority
+            - name: AWS__Cognito__ClientId
+              valueFrom:
+                secretKeyRef:
+                  name: studium-booking-secrets
+                  key: CognitoClientId
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: studium-booking-secrets
+                  key: AwsAccessKeyId
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: studium-booking-secrets
+                  key: AwsSecretAccessKey
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: studium-booking-service
+  namespace: studium
+  labels:
+    app: studium-booking
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: http
+  selector:
+    app: studium-booking
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: studium-booking-hpa
+  namespace: studium
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: studium-booking
+  minReplicas: 3
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 90

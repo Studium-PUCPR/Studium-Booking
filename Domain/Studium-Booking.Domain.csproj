@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Studium_Booking.Domain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

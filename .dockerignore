@@ -1,0 +1,10 @@
+**/.git
+**/.gitignore
+**/.vs
+**/.vscode
+**/bin
+**/obj
+Tests/
+AGENTS.md
+README.md
+**/Internal/Generated

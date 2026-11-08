@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Studium_Booking.Services</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Mapster" />
+    <PackageReference Include="WolverineFx.AmazonSqs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Domain\Studium-Booking.Domain.csproj" />
+    <ProjectReference Include="..\Data\Studium-Booking.Data.csproj" />
+  </ItemGroup>
+
+</Project>
