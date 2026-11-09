@@ -13,7 +13,7 @@
   - `Studium-Booking.Data` (EF Core 10, Npgsql PostgreSQL)
   - `Studium-Booking.Services` (DTOs, Wolverine handlers, Mapster, `INotificationsClient`)
   - `Studium-Booking.Api` (Thin composition root, Scalar, OpenAPI, Health check)
-  - `Studium-Booking.Tests` (xUnit test suite with 26 passing unit tests)
+  - `Studium-Booking.Tests` (xUnit test suite with 27 passing unit tests)
 
 ### 1.2 Hybrid Communication: RabbitMQ (Async) + INotificationsClient (Sync)
 - **Problem Solved:** While inter-service state propagation and audit tracking must remain strictly asynchronous (RabbitMQ), immediate user alerts (such as missed check-in deadlines and booking confirmations) are dispatched synchronously to `Studium-Notifications`.
@@ -23,24 +23,19 @@
   - Outbound (`studium-audit-events-queue`): Publishes `AuditIntegrationEvent` (`[MessageIdentity("studium.audit.integration-event")]`) on booking creation, check-in, check-out, cancellation, and automated no-show.
   - Synchronous HTTP (`INotificationsClient`): Dispatches `POST /api/notifications` directly to `Studium-Notifications` with a 3-attempt exponential backoff retry policy (200ms, 500ms, 1000ms).
   - Outbox Middleware: Configured `opts.Policies.AutoApplyTransactions()` to guarantee transactional message publishing.
+  - Poison Message & Dead-Letter Handling: Configured Wolverine transient exception retries (`NpgsqlException`, `TimeoutException`, `HttpRequestException`) with exponential cooldowns and unhandled errors routing directly to `.error` queue.
 
-### 1.3 Ubiquitous Language & Domain Handler Naming
-- **Context:** Handlers named after external sender services (`CatalogEventsHandler`, `UserStatusChangedHandler`) created conceptual coupling that obscured domain responsibility in `Studium-Booking`.
+### 1.3 Waitlist Expiration & Auto-Progression (UC016)
+- **Context:** When a booking was cancelled, the first candidate was notified, but if they failed to claim the reservation, the slot sat abandoned indefinitely.
 - **Decision:**
-  - Renamed `CatalogEventsHandler` to `SpaceAvailabilitySyncHandler` to emphasize that it synchronizes room availability and maintenance windows for bookings.
-  - Renamed `UserStatusChangedHandler` to `UserEligibilitySyncHandler` to clarify that it maintains the local `BlockedUsers` read model for reservation authorization.
+  - Added configurable claim grace period (`WaitlistClaimGraceMinutes = 15`, default 15 min).
+  - Dispatches delayed message `CheckWaitlistClaimDeadlineMessage(Guid WaitlistId)`.
+  - Implemented `CheckWaitlistClaimDeadlineHandler` that marks unclaimed entries as `Expired` and automatically promotes and notifies the next candidate in line.
+  - Promotes active waitlist entries upon booking creation.
 
-### 1.4 Pre-Generated Wolverine Codegen in Docker Build
-- In Docker production containers, dynamic Roslyn compilation causes cold-start latency and container timeouts.
-- `CritterStackDefaults` is configured with `TypeLoadMode.Static` in Production, and `codegen write` pre-generates handler code during Docker multi-stage builds.
-
-### 1.5 Horizontal Scalability & Kubernetes Topology (Rubric Anchor R2/R3)
-- Configured `k8s/deployment.yaml` with `replicas: 3` under the unified `studium` namespace.
-- Added HorizontalPodAutoscaler targeting 90% CPU utilization (min 3, max 6 replicas).
-- Health probes configured at `/health` with cold start delays (liveness 30s, readiness 15s) to allow startup database migrations to finish.
-
-### 1.6 Concurrency Protection: PostgreSQL GiST Exclusion Constraint
-- Uses native PostgreSQL GiST indexing (`btree_gist` extension) to prevent double bookings at the database engine level via `EXCLUDE USING gist (room_id WITH =, time_slot WITH &&) WHERE (status IN ('Confirmed', 'CheckedIn'))`.
+### 1.4 Database Resilience & Health Check Segregation
+- Configured Npgsql's transient execution strategy (`EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)`) to survive RDS multi-AZ failovers and network drops.
+- Segregated Kubernetes probes: shallow liveness at `/health` (process responsiveness) and deep readiness at `/health/ready` via `DatabaseHealthCheck` (`BookingDbContext.Database.CanConnectAsync()`).
 
 ---
 
@@ -56,36 +51,33 @@
   - `Migrations/` — Auto-applied migrations.
 - `Services/`:
   - `Clients/` — `INotificationsClient.cs` and `NotificationsClient.cs` with exponential backoff retry.
-  - `Handlers/` — Wolverine event handlers (`SpaceAvailabilitySyncHandler`, `UserEligibilitySyncHandler`, `CheckReservationNoShowHandler`).
-  - `DTOs/` — Request, response, and event contracts (`AuditIntegrationEvent`, `UserActivityIntegrationEvent`).
+  - `Handlers/` — Wolverine event handlers (`SpaceAvailabilitySyncHandler`, `UserEligibilitySyncHandler`, `CheckReservationNoShowHandler`, `CheckWaitlistClaimDeadlineHandler`).
+  - `DTOs/` — Request, response, and event contracts (`AuditIntegrationEvent`, `UserActivityIntegrationEvent`, `CheckWaitlistClaimDeadlineMessage`).
 - `Api/`:
   - `Controllers/BookingsController.cs`, `WaitlistController.cs` — REST endpoints.
-  - `Extensions/` — WebApplicationBuilder extensions (`MessagingExtensions`, `AuthenticationExtensions`, `HttpClientExtensions`).
+  - `Extensions/` — WebApplicationBuilder extensions (`MessagingExtensions`, `AuthenticationExtensions`, `HttpClientExtensions`, `DatabaseHealthCheck`).
   - `HostedServices/DatabaseMigrationHostedService.cs` — Startup migration runner.
-- `Tests/` — 26 unit tests covering domain rules and mapping.
+- `Tests/` — 27 unit tests covering domain rules, waitlist expiration, and mapping.
 
 ---
 
 ## 3. Recent Changes History
+- **2026-11-09 (Waitlist Expiration Timer, Database Resilience & DLQ Policies):**
+  - Implemented `CheckWaitlistClaimDeadlineHandler` with configurable `WaitlistClaimGraceMinutes = 15`.
+  - Scheduled deadline checks on waitlist promotion across cancellation and no-show triggers; auto-promotes next in queue upon expiration.
+  - Configured `EnableRetryOnFailure(3)` on PostgreSQL connection.
+  - Separated shallow `/health` liveness probe and deep `/health/ready` probe (`DatabaseHealthCheck`).
+  - Configured Wolverine exception policies for transient retries and dead-letter error queue routing.
+  - Regenerated Wolverine static handlers; 27/27 unit tests pass.
 - **2026-11-09 (Audit Integration, Resilient Retry & Wolverine Outbox):**
   - Added `AuditIntegrationEvent` (`[MessageIdentity("studium.audit.integration-event")]`) published to `studium-audit-events-queue`.
   - Wired `BookingsController` and `CheckReservationNoShowHandler` to publish compliance events on booking creation, check-in, check-out, cancellation, and no-show.
   - Implemented 3-attempt exponential backoff retry policy (200ms, 500ms, 1000ms) in `NotificationsClient`.
   - Enabled Wolverine transactional outbox via `opts.Policies.AutoApplyTransactions()`.
-  - Added `RabbitMQ:AuditQueueName` to `appsettings.json` and `k8s/deployment.yaml`.
-  - Regenerated Wolverine static handlers and verified all 26 unit tests pass.
 - **2026-11-09 (Ubiquitous Language Refactor — SpaceAvailabilitySyncHandler & UserEligibilitySyncHandler):**
   - Renamed `CatalogEventsHandler` to `SpaceAvailabilitySyncHandler` in `Services/Handlers/`.
   - Renamed `UserStatusChangedHandler` to `UserEligibilitySyncHandler` in `Services/Handlers/`.
-  - Replaced `BookingIntegrationEvent` with `UserActivityIntegrationEvent` (`[MessageIdentity("studium.users.user-activity")]`).
-  - Removed dead notification event definitions (`ReservationNotificationEvent`, `WaitlistSlotAvailableEvent`).
-  - Updated `appsettings.json` removing obsolete SQS configuration.
-  - Regenerated Wolverine static handlers and verified all 26 unit tests pass.
 - **2026-11-09 (Synchronous Notification Client Integration):**
   - Implemented typed `INotificationsClient` dispatching alerts synchronously to `POST /api/notifications` in `Studium-Notifications`.
-  - Updated `CheckReservationNoShowHandler` and `BookingsController` to synchronously deliver missed deadline and booking alerts.
-  - Removed `studium-notifications-queue` publishing from RabbitMQ configuration.
 - **2026-11-09 (RabbitMQ Migration & SQS Storage Branch):**
   - Migrated messaging to `WolverineFx.RabbitMQ` (`6.63.0`) over AMQP broker (`studium-rabbitmq-service:5672`).
-- **2026-11-08 (Initial Implementation & Deployment):**
-  - Scaffolded .NET 10 microservice with 3 replicas, GiST exclusion constraints, and 26 unit tests.

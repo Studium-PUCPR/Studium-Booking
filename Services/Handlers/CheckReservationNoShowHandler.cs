@@ -81,11 +81,15 @@ public class CheckReservationNoShowHandler(
             nextWaitlist.Notify(nowUtc);
             await db.SaveChangesAsync(ct);
 
+            await messageBus.ScheduleAsync(
+                new CheckWaitlistClaimDeadlineMessage(nextWaitlist.Id),
+                TimeSpan.FromMinutes(options.Value.WaitlistClaimGraceMinutes));
+
             await notificationsClient.SendAsync(new CreateNotificationRequest(
                 UserId: nextWaitlist.UserId,
                 Type: "WAITLIST_SLOT_AVAILABLE",
                 Title: "Vaga Disponível na Fila de Espera",
-                Message: $"Uma vaga foi liberada na sala {booking.RoomId}. Acesse a plataforma para confirmar sua reserva.",
+                Message: $"Uma vaga foi liberada na sala {booking.RoomId}. Acesse a plataforma dentro de {options.Value.WaitlistClaimGraceMinutes} minutos para confirmar sua reserva.",
                 Data: new { roomId = booking.RoomId, waitlistId = nextWaitlist.Id }), ct);
         }
 

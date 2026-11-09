@@ -56,4 +56,15 @@ public class WaitlistTests
         entry.Cancel(_now.AddMinutes(5));
         Assert.Equal(WaitlistStatus.Cancelled, entry.Status);
     }
+
+    [Fact]
+    public void Expire_NotifiedEntry_ShouldTransitionToExpired()
+    {
+        var slot = new ReservationTimeSlot(_now.AddHours(2), _now.AddHours(4));
+        var entry = WaitlistEntry.Create(_roomId, UserId, slot, _now);
+        entry.Notify(_now);
+
+        entry.Expire(_now.AddMinutes(15));
+        Assert.Equal(WaitlistStatus.Expired, entry.Status);
+    }
 }

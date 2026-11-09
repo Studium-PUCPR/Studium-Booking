@@ -133,6 +133,19 @@ public class BookingsController(
         logger.LogInformation("Reservation {BookingId} created for User {UserId} in Room {RoomId}.",
             booking.Id, userId, booking.RoomId);
 
+        // Promote waitlist entry if creator was waitlisted
+        var activeWaitlist = await db.WaitlistEntries
+            .FirstOrDefaultAsync(w => w.RoomId == booking.RoomId &&
+                                      w.UserId == userId &&
+                                      (w.Status == WaitlistStatus.Notified || w.Status == WaitlistStatus.Pending) &&
+                                      w.TimeSlot.StartsAtUtc < booking.TimeSlot.EndsAtUtc &&
+                                      w.TimeSlot.EndsAtUtc > booking.TimeSlot.StartsAtUtc, ct);
+        if (activeWaitlist is not null)
+        {
+            activeWaitlist.Promote(nowUtc);
+            await db.SaveChangesAsync(ct);
+        }
+
         var response = ToDto(booking);
         return CreatedAtAction(nameof(GetBookingById), new { id = booking.Id }, response);
     }
@@ -355,11 +368,15 @@ public class BookingsController(
             nextWaitlist.Notify(nowUtc);
             await db.SaveChangesAsync(ct);
 
+            await messageBus.ScheduleAsync(
+                new CheckWaitlistClaimDeadlineMessage(nextWaitlist.Id),
+                TimeSpan.FromMinutes(options.Value.WaitlistClaimGraceMinutes));
+
             await notificationsClient.SendAsync(new CreateNotificationRequest(
                 UserId: nextWaitlist.UserId,
                 Type: "WAITLIST_SLOT_AVAILABLE",
                 Title: "Vaga Disponível na Fila de Espera",
-                Message: $"Uma vaga foi liberada na sala {booking.RoomId}. Acesse a plataforma para confirmar sua reserva.",
+                Message: $"Uma vaga foi liberada na sala {booking.RoomId}. Acesse a plataforma dentro de {options.Value.WaitlistClaimGraceMinutes} minutos para confirmar sua reserva.",
                 Data: new { roomId = booking.RoomId, waitlistId = nextWaitlist.Id }), ct);
 
             logger.LogInformation("Notified waitlist candidate {WaitlistId} for newly freed slot in Room {RoomId}.",

@@ -19,6 +19,7 @@ data:
   Booking__DefaultTimeZone: "America/Sao_Paulo"
   Booking__GraceMinutesBeforeCheckIn: "15"
   Booking__GraceMinutesAfterCheckIn: "15"
+  Booking__WaitlistClaimGraceMinutes: "15"
   Booking__MaxNoShowsBeforeSuspension: "3"
   Booking__DefaultSuspensionDays: "7"
 ---
@@ -91,7 +92,7 @@ spec:
             failureThreshold: 5
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 10

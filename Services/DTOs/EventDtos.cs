@@ -33,3 +33,8 @@ public record AuditIntegrationEvent(
     string? MetadataJson = null,
     DateTime? TimestampUtc = null
 );
+
+/// <summary>
+/// Internal delayed message evaluating whether a notified waitlist candidate claimed their slot before deadline.
+/// </summary>
+public record CheckWaitlistClaimDeadlineMessage(Guid WaitlistId);

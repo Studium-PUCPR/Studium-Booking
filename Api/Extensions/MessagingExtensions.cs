@@ -1,6 +1,8 @@
+using Npgsql;
 using Studium_Booking.Services.DTOs;
 using Studium_Booking.Services.Handlers;
 using Wolverine;
+using Wolverine.ErrorHandling;
 using Wolverine.RabbitMQ;
 
 namespace Studium_Booking.Api.Extensions;
@@ -29,6 +31,14 @@ public static class MessagingExtensions
             opts.PublishMessage<AuditIntegrationEvent>().ToRabbitQueue(auditQueueName);
 
             opts.Policies.AutoApplyTransactions();
+
+            opts.OnException<NpgsqlException>()
+                .RetryWithCooldown(TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(1000));
+            opts.OnException<TimeoutException>()
+                .RetryWithCooldown(TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(1000));
+            opts.OnException<HttpRequestException>()
+                .RetryWithCooldown(TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(1000));
+            opts.OnException<Exception>().MoveToErrorQueue();
         });
     }
 }
