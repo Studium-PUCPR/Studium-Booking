@@ -1,10 +1,12 @@
 # Studium-Booking (Deployed with 3 Replicas)
 
-Stack: `.NET 10.0` Web API + PostgreSQL (`studium_booking`) + Amazon SQS (`WolverineFx.AmazonSqs`) + Amazon Cognito (`JwtBearer`) + Scalar API Reference (`/scalar/v1`).
+Stack: `.NET 10.0` Web API + PostgreSQL (`studium_booking`) + RabbitMQ (`WolverineFx.RabbitMQ`) + Amazon Cognito (`JwtBearer`) + Scalar API Reference (`/scalar/v1`).
+
+> **Note on Messaging Architecture:** Messaging is powered by **RabbitMQ** (AMQP) via Wolverine for academic compliance. A legacy AWS SQS version is preserved on branch `origin/sqs`.
 
 ## Rubric R2 & R3 Anchor
 * **Horizontal Scalability:** Runs with 3 Pod replicas in EKS under the `studium` namespace (`replicas: 3`) with HorizontalPodAutoscaler (HPA) targeting 90% CPU utilization.
-* **Strict Asynchronous Messaging:** Adheres strictly to the Studium Golden Path blueprint (`Studium Platform Reference.md`). Inter-service communication is purely event-driven over Amazon SQS using Wolverine (`studium-booking-events-queue`, `studium-users-events-queue`, and `studium-notifications-queue`). No synchronous inter-service HTTP calls.
+* **Strict Asynchronous Messaging:** Adheres strictly to the Studium Golden Path blueprint (`Studium Platform Reference.md`). Inter-service communication is purely event-driven over RabbitMQ using Wolverine (`studium-booking-events-queue`, `studium-users-events-queue`, and `studium-notifications-queue`). No synchronous inter-service HTTP calls.
 
 ## Scope & Capabilities
 - **Real-Time Room Status & Timeline (UC009):** Autonomous room availability resolution (`Available`, `Occupied`, `Reserved`, `Maintenance`, `Inactive`) and chronological booking timelines under `/api/bookings/rooms/{roomId}/status` and `/api/bookings/rooms/{roomId}/timeline`.
@@ -27,7 +29,7 @@ WHERE ("Status" IN (0, 1));
 ```
 Any simultaneous overlapping reservation request yields Postgres error `23P01` (`exclusion_violation`), cleanly translated by `DomainExceptionHandler` into an HTTP 409 Conflict.
 
-## Messaging Architecture (Wolverine + Amazon SQS)
+## Messaging Architecture (Wolverine + RabbitMQ)
 - **Inbound (`studium-booking-events-queue`):**
   - Replicates catalog state autonomously from `Studium-Catalog`:
     - `RoomStatusChangedEvent`: updates room activation status.

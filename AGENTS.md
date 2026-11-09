@@ -15,9 +15,9 @@
   - `Studium-Booking.Api` (Thin composition root, Scalar, OpenAPI, Health check)
   - `Studium-Booking.Tests` (xUnit test suite with 26 passing unit tests)
 
-### 1.2 Strict Asynchronous Messaging over Amazon SQS (Golden Path Directive)
-- **Problem Solved:** Overcame legacy README notes suggesting synchronous REST calls from Booking to Catalog/Users. Point-to-point HTTP inter-service calls create runtime coupling, cascading failure vulnerabilities, and violate the platform blueprint established in `Studium Platform Reference.md`.
-- **Chosen Solution:** Purely asynchronous messaging over Amazon SQS using Wolverine (`WolverineFx.AmazonSqs`):
+### 1.2 Strict Asynchronous Messaging over RabbitMQ (Golden Path Directive)
+- **Problem Solved:** Point-to-point HTTP inter-service calls create runtime coupling, cascading failure vulnerabilities, and violate the platform blueprint established in `Studium Platform Reference.md`.
+- **Chosen Solution:** Purely asynchronous messaging over RabbitMQ using Wolverine (`WolverineFx.RabbitMQ`). SQS version preserved on branch `origin/sqs`.
   - Inbound (`studium-booking-events-queue`): Receives `RoomStatusChangedEvent`, `RoomMaintenanceEvent`, `OperatingHoursChangedEvent`, and `ResourceUpdatedEvent` from `Studium-Catalog` to maintain an autonomous replicated read model (`ReplicatedRoom`, `ReplicatedMaintenanceBlock`, `ReplicatedOperatingHours`). Also receives `UserStatusChangedEvent` from `Studium-Users` to maintain local `BlockedUsers`.
   - Outbound (`studium-users-events-queue`): Publishes `BookingIntegrationEvent` (`ReservationCreated`, `ReservationCheckedIn`, `ReservationCancelled`, `NoShowRecorded`) for user audit logs and penalty tracking in `Studium-Users`.
   - Outbound (`studium-notifications-queue`): Publishes `ReservationNotificationEvent` and `WaitlistSlotAvailableEvent` for `Studium-Notifications`.
@@ -55,82 +55,43 @@
 - `Studium-Booking` consumes `UserStatusChangedEvent` via `UserStatusChangedHandler` and maintains a local `BlockedUser` table for instantaneous reservation rejection without inter-service RPC.
 
 ### 1.8 Automated No-Show Evaluation via Wolverine Delayed Messaging
-- Upon reservation creation, `BookingsController` schedules a `CheckReservationNoShowMessage` with a 15-minute delay from the reservation start time via Wolverine's `IMessageBus.ScheduleAsync()`.
-- At the scheduled time, `CheckReservationNoShowHandler` evaluates whether the booking is still `Confirmed` (unattended). If so, it transitions to `NoShow`, frees the room, and broadcasts `BookingIntegrationEvent(NoShowRecorded)`.
+- Upon reservation creation, `BookingsController` schedules a `CheckReservationNoShowMessage` with a 15-minute delay from reservation start time.
+- If attendance has not transitioned to `CheckedIn` when the timer fires, the reservation transitions to `NoShow`, frees the room, triggers waitlist promotion, and dispatches `BookingIntegrationEvent(NoShowRecorded)`.
 
 ---
 
 ## 2. Project Structure & File Map
-- [`Studium-Booking.sln`](./Studium-Booking.sln) — Root solution file containing the 5 projects.
-- [`Directory.Build.props`](./Directory.Build.props) & [`Directory.Packages.props`](./Directory.Packages.props) — CPM and build settings.
-- **`Domain/`:**
-  - `Entities/Bookings/Booking.cs` — Booking aggregate root with check-in, check-out, cancel, no-show methods and audit history.
-  - `Entities/Bookings/ReservationTimeSlot.cs` — Value object enforcing start < end, 15m min duration, 12h max duration, and overlap checks.
-  - `Entities/Bookings/BookingStatus.cs` — Enum (`Confirmed`, `CheckedIn`, `Completed`, `Cancelled`, `NoShow`).
-  - `Entities/Bookings/BookingAuditLog.cs` — Positional record for self-contained entity audit history.
-  - `Entities/Users/BlockedUser.cs` — Local replicated read model tracking blocked users.
-  - `Entities/Waitlist/WaitlistEntry.cs` — Queued reservation waitlist entity.
-  - `Entities/Waitlist/WaitlistStatus.cs` — Enum (`Pending`, `Notified`, `Promoted`, `Expired`, `Cancelled`).
-  - `Entities/ReplicatedCatalog/ReplicatedRoom.cs` — Autonomous replicated read model from `Studium-Catalog`.
-  - `Entities/ReplicatedCatalog/ReplicatedMaintenanceBlock.cs` — Maintenance interval records.
-  - `Entities/ReplicatedCatalog/ReplicatedOperatingHours.cs` — Weekly operating schedule records.
-  - `Exceptions/` — `DomainException`, `EntityNotFoundException`, `BookingConflictException`, `UserBlockedException`.
-  - `Common/UtcDateTime.cs` — UTC timestamp normalizer.
-- **`Data/`:**
-  - `BookingDbContext.cs` — DbContext applying Fluent API configurations and registering `btree_gist`.
-  - `Configurations/` — Dedicated `IEntityTypeConfiguration<T>` mappings for `Booking`, `BookingAuditLog`, `BlockedUser`, `WaitlistEntry`, `ReplicatedRoom`, `ReplicatedMaintenanceBlock`, `ReplicatedOperatingHours`.
-  - `Migrations/` — EF Core migrations:
-    - `Initial_Migration`: Initial schema.
-    - `20261109002413_Add_ExclusionConstraint_And_BlockedUsers`: `btree_gist` extension, `CK_Bookings_NoDoubleBooking` GiST exclusion constraint (using `tstzrange`), and `BlockedUsers` table.
-- **`Services/`:**
-  - `DTOs/` — Positional record DTOs for bookings, waitlist, blocked users, room status, reports, and events.
-  - `DTOs/BookingMappingConfig.cs` — Mapster configuration flattening value object properties.
-  - `Handlers/CatalogEventsHandler.cs` — Wolverine message handler consuming `studium-booking-events-queue`.
-  - `Handlers/UserStatusChangedHandler.cs` — Wolverine handler consuming `UserStatusChangedEvent` to sync `BlockedUsers`.
-  - `Handlers/CheckReservationNoShowHandler.cs` — Wolverine delayed message handler for 15-minute no-show evaluation.
-  - `Options/BookingOptions.cs` — Options pattern configuration (grace periods, time zone, thresholds).
-- **`Api/`:**
-  - `Program.cs` — Composition root with OpenAPI, Scalar, Wolverine SQS, and Health check.
-  - `Controllers/BookingsController.cs` — Core reservation lifecycle (`/api/bookings`).
-  - `Controllers/RoomsController.cs` — Real-time room status and timelines (`/api/bookings/rooms`).
-  - `Controllers/WaitlistController.cs` — Waitlist operations (`/api/bookings/waitlist`).
-  - `Controllers/ReportsController.cs` — Occupancy reports and utilization analytics (`/api/bookings/reports`).
-  - `Middleware/DomainExceptionHandler.cs` — Global RFC 7807 problem details handler mapping Postgres `23P01` to 409 Conflict.
-  - `HostedServices/DatabaseMigrationHostedService.cs` — Startup migration runner.
-  - `Extensions/AuthenticationExtensions.cs` & `MessagingExtensions.cs` — Modular DI extensions.
-- **`Tests/`:**
-  - `Domain/BookingTests.cs` — Invariants, time slots, check-in windows, check-out, cancel, no-show, audit tests.
-  - `Domain/BlockedUserTests.cs` — Blocked user domain invariants and reactivation tests.
-  - `Domain/WaitlistTests.cs` — Waitlist creation and lifecycle state transitions.
-  - `Domain/ReplicatedRoomTests.cs` — Maintenance block and operating hours validation tests.
-  - `DTOs/DtoMappingTests.cs` — Mapster adapter and JSON serialization tests.
-- [`Dockerfile`](./Dockerfile) — Multi-stage build with `codegen write`.
-- [`k8s/deployment.yaml`](./k8s/deployment.yaml) — Production deployment with 3 replicas, HPA, ConfigMap, and Service.
-- [`.github/workflows/ci-cd.yml`](./.github/workflows/ci-cd.yml) — Automated test, build, push, secret sync, and EKS deploy workflow.
+
+```
+Studium-Booking/
+├── Directory.Build.props              # Enforces net10.0, Nullable, ImplicitUsings
+├── Directory.Packages.props           # Central Package Management with WolverineFx.RabbitMQ
+├── Dockerfile                         # Multi-stage build with codegen write
+├── k8s/
+│   └── deployment.yaml                # Production deployment (3 replicas, HPA, RabbitMQ config)
+├── .github/workflows/
+│   └── ci-cd.yml                      # CI/CD pipeline building, testing, pushing to ECR and deploying to EKS
+├── Domain/
+│   ├── Common/                        # AggregateRoot, ValueObject, DomainException
+│   └── Entities/                      # Booking, ReservationTimeSlot, BookingAuditLog, WaitlistEntry, ReplicatedRoom, BlockedUser
+├── Data/                              # BookingDbContext, Configurations, Migrations
+├── Services/                          # DTOs, Handlers (CatalogEventsHandler, UserStatusChangedHandler, CheckReservationNoShowHandler)
+├── Api/                               # Controllers, Extensions (MessagingExtensions for RabbitMQ), HostedServices
+└── Tests/                             # 26 unit tests covering domain invariants and workflows
+```
 
 ---
 
 ## 3. Recent Changes History
-- **2026-11-09 (Fix Exclusion Constraint to use tstzrange):**
-  - Resolved Postgres migration error `42883: function tsrange(timestamp with time zone, timestamp with time zone) does not exist` by replacing `tsrange` with `tstzrange` in migration `20261109002413_Add_ExclusionConstraint_And_BlockedUsers`.
-  - Updated `Studium Platform Reference.md`, `README.md`, and `AGENTS.md`.
-- **2026-11-09 (GiST Exclusion Constraint, Wolverine No-Show Timer, BlockedUsers Read Model):**
-  - Added PostgreSQL `btree_gist` extension and `CK_Bookings_NoDoubleBooking` exclusion constraint in EF Core migration to enforce physical zero-overlap guarantees across 3 EKS pod replicas.
-  - Added Wolverine delayed message scheduling for 15-minute no-show evaluation (`CheckReservationNoShowMessage` and `CheckReservationNoShowHandler`).
-  - Transitioned behavioral penalties to `Studium-Users`; introduced `BlockedUser` entity, configuration, DTOs, and `UserStatusChangedHandler` in `Studium-Booking`.
-  - Removed obsolete internal `PenaltyRecord` domain and API routes (`PenaltiesController`).
-  - Added xUnit unit tests for `BlockedUser` domain logic and updated DTO mapping tests (26 passed).
-  - Regenerated Wolverine static handlers via `codegen write`.
-- **2026-11-08 (Initial Implementation & Deployment):**
-  - Scaffolded 5-project Clean Architecture solution with .NET 10, CPM, and strict nullability.
-  - Implemented Domain entities: `Booking`, `ReservationTimeSlot`, `BookingAuditLog`, `WaitlistEntry`, `ReplicatedRoom`, `ReplicatedMaintenanceBlock`, `ReplicatedOperatingHours`.
-  - Implemented Data layer with `BookingDbContext` and isolated Fluent API configurations.
-  - Generated initial EF Core PostgreSQL migration `Initial_Migration`.
-  - Implemented Services layer with DTOs, options, and Wolverine `CatalogEventsHandler` consuming events from `Studium-Catalog`.
-  - Implemented REST API controllers with canonical routes: `BookingsController` (`/api/bookings`), `RoomsController` (`/api/bookings/rooms`), `WaitlistController` (`/api/bookings/waitlist`), and `ReportsController` (`/api/bookings/reports`).
-  - Generated Wolverine static handler codegen via `codegen write`.
-  - Added production-grade Dockerfile, `k8s/deployment.yaml` with 3 replicas and HPA, and `.github/workflows/ci-cd.yml` with dynamic secret assembly.
-  - Successfully verified CI/CD build and deployed 3 live replicas to Amazon EKS in the `studium` namespace.
-
+- **2026-11-09 (Migrated Messaging from AWS SQS to RabbitMQ):**
+  - Replaced `WolverineFx.AmazonSqs` with `WolverineFx.RabbitMQ` (v6.63.0) across `Directory.Packages.props`, `Services/Studium-Booking.Services.csproj`, and `Api/Studium-Booking.Api.csproj`.
+  - Updated `Api/Extensions/MessagingExtensions.cs` to connect to RabbitMQ broker at `amqp://studium:StudiumRabbitMQ2026!@studium-rabbitmq-service.studium.svc.cluster.local:5672` with `.AutoProvision()`.
+  - Updated `k8s/deployment.yaml` with RabbitMQ configuration keys.
+  - Re-generated Wolverine static handlers in Release mode; 26 unit tests passing.
+  - SQS version preserved on branch `origin/sqs`.
 - **2026-11-08 (Enforce Role-based Duration Limits):**
   - Enforced max 2 hours reservation duration for Students and max 5 hours for Professors and Administrators in `BookingsController` and `WaitlistController`.
+- **2026-11-08 (GiST Exclusion Constraint, Wolverine No-Show Timer, BlockedUsers Read Model):**
+  - Added PostgreSQL `btree_gist` extension and `CK_Bookings_NoDoubleBooking` exclusion constraint with `tstzrange`.
+  - Added Wolverine delayed message scheduling for 15-minute no-show evaluation.
+  - Transitioned behavioral penalties to `Studium-Users` and synchronized `BlockedUsers`.

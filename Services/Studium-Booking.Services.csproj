@@ -6,7 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="Mapster" />
-    <PackageReference Include="WolverineFx.AmazonSqs" />
+    <PackageReference Include="WolverineFx.RabbitMQ" />
   </ItemGroup>
 
   <ItemGroup>

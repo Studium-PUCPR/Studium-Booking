@@ -11,9 +11,10 @@ metadata:
 data:
   ASPNETCORE_ENVIRONMENT: "Production"
   AWS__Region: "us-east-2"
-  AWS__SQS__BookingQueueName: "studium-booking-events-queue"
-  AWS__SQS__UsersQueueName: "studium-users-events-queue"
-  AWS__SQS__NotificationsQueueName: "studium-notifications-queue"
+  RabbitMQ__ConnectionString: "amqp://studium:StudiumRabbitMQ2026!@studium-rabbitmq-service.studium.svc.cluster.local:5672"
+  RabbitMQ__BookingQueueName: "studium-booking-events-queue"
+  RabbitMQ__UsersQueueName: "studium-users-events-queue"
+  RabbitMQ__NotificationsQueueName: "studium-notifications-queue"
   Booking__DefaultTimeZone: "America/Sao_Paulo"
   Booking__GraceMinutesBeforeCheckIn: "15"
   Booking__GraceMinutesAfterCheckIn: "15"

@@ -1,8 +1,7 @@
-using Amazon;
 using Studium_Booking.Services.DTOs;
 using Studium_Booking.Services.Handlers;
 using Wolverine;
-using Wolverine.AmazonSqs;
+using Wolverine.RabbitMQ;
 
 namespace Studium_Booking.Api.Extensions;
 
@@ -14,33 +13,21 @@ public static class MessagingExtensions
         {
             opts.Discovery.IncludeAssembly(typeof(CatalogEventsHandler).Assembly);
 
-            var awsRegion = builder.Configuration["AWS:Region"] ?? "us-east-2";
-            opts.UseAmazonSqsTransport(cfg =>
-            {
-                cfg.RegionEndpoint = RegionEndpoint.GetBySystemName(awsRegion);
-                var serviceUrl = builder.Configuration["AWS:ServiceURL"];
-                if (!string.IsNullOrWhiteSpace(serviceUrl))
-                    cfg.ServiceURL = serviceUrl;
-            }).AutoProvision();
+            var rabbitConnectionString = builder.Configuration["RabbitMQ:ConnectionString"]
+                ?? builder.Configuration["RABBITMQ_URL"]
+                ?? "amqp://studium:StudiumRabbitMQ2026!@studium-rabbitmq-service.studium.svc.cluster.local:5672";
 
-            var bookingQueueName = builder.Configuration["AWS:SQS:BookingQueueName"];
-            if (!string.IsNullOrWhiteSpace(bookingQueueName))
-            {
-                opts.ListenToSqsQueue(bookingQueueName);
-            }
+            opts.UseRabbitMq(new Uri(rabbitConnectionString)).AutoProvision();
 
-            var usersQueueName = builder.Configuration["AWS:SQS:UsersQueueName"];
-            if (!string.IsNullOrWhiteSpace(usersQueueName))
-            {
-                opts.PublishMessage<BookingIntegrationEvent>().ToSqsQueue(usersQueueName);
-            }
+            var bookingQueueName = builder.Configuration["RabbitMQ:BookingQueueName"] ?? "studium-booking-events-queue";
+            opts.ListenToRabbitQueue(bookingQueueName);
 
-            var notificationsQueueName = builder.Configuration["AWS:SQS:NotificationsQueueName"];
-            if (!string.IsNullOrWhiteSpace(notificationsQueueName))
-            {
-                opts.PublishMessage<ReservationNotificationEvent>().ToSqsQueue(notificationsQueueName);
-                opts.PublishMessage<WaitlistSlotAvailableEvent>().ToSqsQueue(notificationsQueueName);
-            }
+            var usersQueueName = builder.Configuration["RabbitMQ:UsersQueueName"] ?? "studium-users-events-queue";
+            opts.PublishMessage<BookingIntegrationEvent>().ToRabbitQueue(usersQueueName);
+
+            var notificationsQueueName = builder.Configuration["RabbitMQ:NotificationsQueueName"] ?? "studium-notifications-queue";
+            opts.PublishMessage<ReservationNotificationEvent>().ToRabbitQueue(notificationsQueueName);
+            opts.PublishMessage<WaitlistSlotAvailableEvent>().ToRabbitQueue(notificationsQueueName);
         });
     }
 }
