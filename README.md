@@ -21,7 +21,7 @@ ALTER TABLE "Bookings"
 ADD CONSTRAINT "CK_Bookings_NoDoubleBooking"
 EXCLUDE USING gist (
     "RoomId" WITH =,
-    tsrange("StartsAtUtc", "EndsAtUtc") WITH &&
+    tstzrange("StartsAtUtc", "EndsAtUtc") WITH &&
 )
 WHERE ("Status" IN (0, 1));
 ```

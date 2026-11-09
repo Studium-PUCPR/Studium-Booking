@@ -36,13 +36,13 @@
 
 ### 1.6 Concurrency Protection: PostgreSQL GiST Exclusion Constraint
 - With 3 pod replicas running concurrently, application-level `AnyAsync` validation checks suffer from race conditions.
-- Enforced at PostgreSQL engine level using `btree_gist` extension:
+- Enforced at PostgreSQL engine level using `btree_gist` extension with `tstzrange` (`timestamp with time zone` range constructor):
   ```sql
   ALTER TABLE "Bookings"
   ADD CONSTRAINT "CK_Bookings_NoDoubleBooking"
   EXCLUDE USING gist (
       "RoomId" WITH =,
-      tsrange("StartsAtUtc", "EndsAtUtc") WITH &&
+      tstzrange("StartsAtUtc", "EndsAtUtc") WITH &&
   )
   WHERE ("Status" IN (0, 1));
   ```
@@ -81,7 +81,7 @@
   - `Configurations/` — Dedicated `IEntityTypeConfiguration<T>` mappings for `Booking`, `BookingAuditLog`, `BlockedUser`, `WaitlistEntry`, `ReplicatedRoom`, `ReplicatedMaintenanceBlock`, `ReplicatedOperatingHours`.
   - `Migrations/` — EF Core migrations:
     - `Initial_Migration`: Initial schema.
-    - `20261109002413_Add_ExclusionConstraint_And_BlockedUsers`: `btree_gist` extension, `CK_Bookings_NoDoubleBooking` GiST exclusion constraint, and `BlockedUsers` table.
+    - `20261109002413_Add_ExclusionConstraint_And_BlockedUsers`: `btree_gist` extension, `CK_Bookings_NoDoubleBooking` GiST exclusion constraint (using `tstzrange`), and `BlockedUsers` table.
 - **`Services/`:**
   - `DTOs/` — Positional record DTOs for bookings, waitlist, blocked users, room status, reports, and events.
   - `DTOs/BookingMappingConfig.cs` — Mapster configuration flattening value object properties.
@@ -111,6 +111,9 @@
 ---
 
 ## 3. Recent Changes History
+- **2026-11-09 (Fix Exclusion Constraint to use tstzrange):**
+  - Resolved Postgres migration error `42883: function tsrange(timestamp with time zone, timestamp with time zone) does not exist` by replacing `tsrange` with `tstzrange` in migration `20261109002413_Add_ExclusionConstraint_And_BlockedUsers`.
+  - Updated `Studium Platform Reference.md`, `README.md`, and `AGENTS.md`.
 - **2026-11-09 (GiST Exclusion Constraint, Wolverine No-Show Timer, BlockedUsers Read Model):**
   - Added PostgreSQL `btree_gist` extension and `CK_Bookings_NoDoubleBooking` exclusion constraint in EF Core migration to enforce physical zero-overlap guarantees across 3 EKS pod replicas.
   - Added Wolverine delayed message scheduling for 15-minute no-show evaluation (`CheckReservationNoShowMessage` and `CheckReservationNoShowHandler`).
