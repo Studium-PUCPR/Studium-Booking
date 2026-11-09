@@ -11,16 +11,34 @@ Stack: `.NET 10.0` Web API + PostgreSQL (`studium_booking`) + Amazon SQS (`Wolve
 - **Reservation Lifecycle & Conflict Validation (UC012–UC015):** Booking creation, listing, detail view, cancellation, and check-out under `/api/bookings`. Enforces room status, operating hour windows, maintenance block exclusion, concurrent reservation conflict detection, and user suspension checks.
 - **Waitlist (UC016):** Queuing system under `/api/bookings/waitlist` when rooms are booked. When a confirmed booking is cancelled, the oldest pending waitlist candidate is notified and a `WaitlistSlotAvailable` event is dispatched.
 - **QR Code Check-In (UC017):** Attendance confirmation via QR code / check-in code under `/api/bookings/{id}/check-in` and `/api/bookings/{id}/qr-code` within configurable grace windows.
-- **No-Show Tracking & Penalty Enforcement:** Automatic/manual no-show recording (`/api/bookings/{id}/mark-no-show`), issuing infractions and automatic suspensions after threshold violations, and penalty management under `/api/bookings/penalties`.
+- **No-Show Evaluation & Blocked Users Read Model:** Automated 15-minute no-show evaluation timer via Wolverine delayed messaging (`CheckReservationNoShowMessage`), manual no-show recording (`/api/bookings/{id}/mark-no-show`), and publishing `BookingIntegrationEvent(NoShowRecorded)` to `studium-users-events-queue`. User infractions and blocking are managed autonomously by `Studium-Users` (auto-blocking after 5 no-shows in 30 days) and synchronized to `Studium-Booking`'s `BlockedUsers` read model via `UserStatusChangedEvent`.
 - **Occupancy & Utilization Reports (UC020):** Aggregated metrics under `/api/bookings/reports/occupancy` covering check-in rates, cancellation rates, no-show rates, total booked hours, peak hour histograms, and room breakdown.
 
+## High-Concurrency Multi-Replica Safety (PostgreSQL GiST Exclusion Constraint)
+With 3 active EKS pod replicas, standard LINQ application-level checks are vulnerable to concurrency races. `Studium-Booking` enforces double-booking prevention at the database engine level via the PostgreSQL `btree_gist` extension:
+```sql
+ALTER TABLE "Bookings"
+ADD CONSTRAINT "CK_Bookings_NoDoubleBooking"
+EXCLUDE USING gist (
+    "RoomId" WITH =,
+    tsrange("StartsAtUtc", "EndsAtUtc") WITH &&
+)
+WHERE ("Status" IN (0, 1));
+```
+Any simultaneous overlapping reservation request yields Postgres error `23P01` (`exclusion_violation`), cleanly translated by `DomainExceptionHandler` into an HTTP 409 Conflict.
+
 ## Messaging Architecture (Wolverine + Amazon SQS)
-- **Inbound (`studium-booking-events-queue`):** Replicates catalog state autonomously from `Studium-Catalog`:
-  - `RoomStatusChangedEvent`: updates room activation status.
-  - `RoomMaintenanceEvent`: adds/removes maintenance blocks.
-  - `OperatingHoursChangedEvent`: updates weekly operating hour windows.
-  - `ResourceUpdatedEvent`: tracks room equipment updates.
-- **Outbound (`studium-users-events-queue`):** Dispatches `BookingIntegrationEvent` (`ReservationCreated`, `ReservationCheckedIn`, `ReservationCancelled`, `NoShowRecorded`) for institutional audit logging in `Studium-Users`.
+- **Inbound (`studium-booking-events-queue`):**
+  - Replicates catalog state autonomously from `Studium-Catalog`:
+    - `RoomStatusChangedEvent`: updates room activation status.
+    - `RoomMaintenanceEvent`: adds/removes maintenance blocks.
+    - `OperatingHoursChangedEvent`: updates weekly operating hour windows.
+    - `ResourceUpdatedEvent`: tracks room equipment updates.
+  - Replicates user blocking state from `Studium-Users`:
+    - `UserStatusChangedEvent`: maintains local `BlockedUsers` read model for fast O(1) reservation eligibility checks.
+- **Local Delayed Messaging (Wolverine Scheduler):**
+  - `CheckReservationNoShowMessage`: Scheduled with a 15-minute delay from reservation start time to evaluate attendance and auto-mark no-shows.
+- **Outbound (`studium-users-events-queue`):** Dispatches `BookingIntegrationEvent` (`ReservationCreated`, `ReservationCheckedIn`, `ReservationCancelled`, `NoShowRecorded`) for institutional audit logging and penalty evaluation in `Studium-Users`.
 - **Outbound (`studium-notifications-queue`):** Dispatches `ReservationNotificationEvent` and `WaitlistSlotAvailableEvent` for student/professor alerts and email notifications.
 
 ## Local Environment Setup & Testing

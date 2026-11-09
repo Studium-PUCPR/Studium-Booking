@@ -5,7 +5,6 @@ using Microsoft.Extensions.Options;
 using Studium_Booking.Api.Extensions;
 using Studium_Booking.Data;
 using Studium_Booking.Domain.Entities.Bookings;
-using Studium_Booking.Domain.Entities.Penalties;
 using Studium_Booking.Domain.Entities.Waitlist;
 using Studium_Booking.Domain.Exceptions;
 using Studium_Booking.Services.DTOs;
@@ -31,15 +30,12 @@ public class BookingsController(
         var userId = User.GetUserId();
         var nowUtc = DateTime.UtcNow;
 
-        var isBlocked = await db.Penalties.AnyAsync(
-            p => p.UserId == userId &&
-                 p.IsActive &&
-                 p.Type == PenaltyType.Suspension &&
-                 (p.ExpiresAtUtc == null || p.ExpiresAtUtc > nowUtc),
+        var isBlocked = await db.BlockedUsers.AnyAsync(
+            u => u.UserId == userId && u.IsBlocked,
             ct);
 
         if (isBlocked)
-            throw new UserBlockedException("User is currently suspended from making reservations due to active penalties.");
+            throw new UserBlockedException("User account is currently blocked from making reservations.");
 
         var timeSlot = new ReservationTimeSlot(request.StartsAtUtc, request.EndsAtUtc);
 
@@ -90,6 +86,14 @@ public class BookingsController(
 
         await db.Bookings.AddAsync(booking, ct);
         await db.SaveChangesAsync(ct);
+
+        // Schedule automated 15-minute No-Show evaluation message
+        var graceDeadline = booking.TimeSlot.StartsAtUtc.AddMinutes(options.Value.GraceMinutesAfterCheckIn);
+        var noShowDelay = graceDeadline - nowUtc;
+        if (noShowDelay > TimeSpan.Zero)
+        {
+            await messageBus.ScheduleAsync(new CheckReservationNoShowMessage(booking.Id), noShowDelay);
+        }
 
         await messageBus.PublishAsync(new BookingIntegrationEvent(
             BookingEventType.ReservationCreated,
@@ -364,27 +368,6 @@ public class BookingsController(
             throw new EntityNotFoundException("BOOKING_NOT_FOUND", $"Reservation '{id}' was not found.");
 
         booking.MarkNoShow(nowUtc, options.Value.GraceMinutesAfterCheckIn);
-
-        // Record penalty
-        var activeInfractionsCount = await db.Penalties.CountAsync(
-            p => p.UserId == booking.UserId &&
-                 p.Type == PenaltyType.NoShowInfraction &&
-                 p.IsActive,
-            ct);
-
-        var penaltyType = activeInfractionsCount >= (options.Value.MaxNoShowsBeforeSuspension - 1)
-            ? PenaltyType.Suspension
-            : PenaltyType.NoShowInfraction;
-
-        var penalty = PenaltyRecord.Create(
-            booking.UserId,
-            penaltyType,
-            $"Automated penalty issued for no-show on reservation {booking.Id}.",
-            nowUtc,
-            booking.Id,
-            penaltyType == PenaltyType.Suspension ? TimeSpan.FromDays(options.Value.DefaultSuspensionDays) : null);
-
-        await db.Penalties.AddAsync(penalty, ct);
         await db.SaveChangesAsync(ct);
 
         await messageBus.PublishAsync(new BookingIntegrationEvent(
@@ -400,7 +383,7 @@ public class BookingsController(
             booking.RoomId,
             booking.TimeSlot.StartsAtUtc,
             booking.TimeSlot.EndsAtUtc,
-            $"Reservation marked as No-Show. A {penaltyType} penalty was recorded.",
+            "Reservation marked as No-Show.",
             nowUtc));
 
         return Ok(ToDto(booking));

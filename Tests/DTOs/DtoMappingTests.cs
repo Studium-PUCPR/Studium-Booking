@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Mapster;
 using Studium_Booking.Domain.Entities.Bookings;
-using Studium_Booking.Domain.Entities.Penalties;
 using Studium_Booking.Domain.Entities.Waitlist;
 using Studium_Booking.Services.DTOs;
 using Xunit;
@@ -37,19 +36,6 @@ public class DtoMappingTests
         Assert.Equal(booking.TimeSlot.EndsAtUtc, dto.EndsAtUtc);
         Assert.Equal(booking.Status, dto.Status);
         Assert.Equal(booking.CheckInCode, dto.CheckInCode);
-    }
-
-    [Fact]
-    public void Mapster_AdaptsPenaltyRecord_ToPenaltyResponseDto()
-    {
-        var penalty = PenaltyRecord.Create(UserId, PenaltyType.Suspension, "Rule violation", _now);
-        var dto = penalty.Adapt<PenaltyResponseDto>();
-
-        Assert.Equal(penalty.Id, dto.Id);
-        Assert.Equal(penalty.UserId, dto.UserId);
-        Assert.Equal(penalty.Type, dto.Type);
-        Assert.Equal(penalty.Reason, dto.Reason);
-        Assert.True(dto.IsActive);
     }
 
     [Fact]

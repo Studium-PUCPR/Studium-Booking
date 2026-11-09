@@ -21,6 +21,7 @@ namespace Studium_Booking.Data.Migrations
                 .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "btree_gist");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Studium_Booking.Domain.Entities.Bookings.Booking", b =>
@@ -140,56 +141,6 @@ namespace Studium_Booking.Data.Migrations
                     b.ToTable("BookingAuditLogs", (string)null);
                 });
 
-            modelBuilder.Entity("Studium_Booking.Domain.Entities.Penalties.PenaltyRecord", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("BookingId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("ExpiresAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("IssuedAtUtc")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateTime?>("RevokedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("RevokedReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsActive");
-
-                    b.HasIndex("Type");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("PenaltyRecords", (string)null);
-                });
-
             modelBuilder.Entity("Studium_Booking.Domain.Entities.ReplicatedCatalog.ReplicatedMaintenanceBlock", b =>
                 {
                     b.Property<Guid>("Id")
@@ -270,6 +221,29 @@ namespace Studium_Booking.Data.Migrations
                     b.HasIndex("IsActive");
 
                     b.ToTable("ReplicatedRooms", (string)null);
+                });
+
+            modelBuilder.Entity("Studium_Booking.Domain.Entities.Users.BlockedUser", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("BlockReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("IsBlocked")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId");
+
+                    b.HasIndex("IsBlocked");
+
+                    b.ToTable("BlockedUsers", (string)null);
                 });
 
             modelBuilder.Entity("Studium_Booking.Domain.Entities.Waitlist.WaitlistEntry", b =>

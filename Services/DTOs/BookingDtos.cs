@@ -70,3 +70,10 @@ public record QrCodeResponseDto(
     int GraceMinutesBefore,
     int GraceMinutesAfter
 );
+
+/// <summary>
+/// Internal delayed message scheduled when a reservation is confirmed to automatically evaluate No-Show after grace period expires.
+/// </summary>
+public record CheckReservationNoShowMessage(
+    Guid BookingId
+);
