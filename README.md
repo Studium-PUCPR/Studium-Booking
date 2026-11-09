@@ -6,7 +6,9 @@ Stack: `.NET 10.0` Web API + PostgreSQL (`studium_booking`) + RabbitMQ (`Wolveri
 
 ## Rubric R2 & R3 Anchor
 * **Horizontal Scalability:** Runs with 3 Pod replicas in EKS under the `studium` namespace (`replicas: 3`) with HorizontalPodAutoscaler (HPA) targeting 90% CPU utilization.
-* **Strict Asynchronous Messaging:** Adheres strictly to the Studium Golden Path blueprint (`Studium Platform Reference.md`). Inter-service communication is purely event-driven over RabbitMQ using Wolverine (`studium-booking-events-queue`, `studium-users-events-queue`, and `studium-notifications-queue`). No synchronous inter-service HTTP calls.
+* **Hybrid Inter-Service Communication:**
+  - **Asynchronous (RabbitMQ):** Inter-service domain events are purely event-driven over RabbitMQ using Wolverine (`studium-booking-events-queue` and `studium-users-events-queue`).
+  - **Synchronous (REST HTTP):** Dispatches immediate user alerts (missed check-in deadlines, booking confirmations, waitlist promotions) synchronously via `INotificationsClient` to `Studium-Notifications` (`POST /api/notifications`).
 
 ## Scope & Capabilities
 - **Real-Time Room Status & Timeline (UC009):** Autonomous room availability resolution (`Available`, `Occupied`, `Reserved`, `Maintenance`, `Inactive`) and chronological booking timelines under `/api/bookings/rooms/{roomId}/status` and `/api/bookings/rooms/{roomId}/timeline`.
@@ -40,8 +42,8 @@ Any simultaneous overlapping reservation request yields Postgres error `23P01` (
     - `UserStatusChangedEvent`: maintains local `BlockedUsers` read model for fast O(1) reservation eligibility checks.
 - **Local Delayed Messaging (Wolverine Scheduler):**
   - `CheckReservationNoShowMessage`: Scheduled with a 15-minute delay from reservation start time to evaluate attendance and auto-mark no-shows.
-- **Outbound (`studium-users-events-queue`):** Dispatches `BookingIntegrationEvent` (`ReservationCreated`, `ReservationCheckedIn`, `ReservationCancelled`, `NoShowRecorded`) for institutional audit logging and penalty evaluation in `Studium-Users`.
-- **Outbound (`studium-notifications-queue`):** Dispatches `ReservationNotificationEvent` and `WaitlistSlotAvailableEvent` for student/professor alerts and email notifications.
+- **Outbound (`studium-users-events-queue`):** Dispatches `BookingIntegrationEvent` (`ReservationCreated`, `ReservationCheckedIn`, `ReservationCancelled`, `NoShowRecorded`) for institutional infraction and penalty evaluation in `Studium-Users`.
+- **Synchronous Notification Dispatch (`INotificationsClient`):** Directly invokes `POST /api/notifications` on `Studium-Notifications` when reservations are confirmed, cancelled, or when a student misses the 15-minute attendance deadline.
 
 ## Local Environment Setup & Testing
 

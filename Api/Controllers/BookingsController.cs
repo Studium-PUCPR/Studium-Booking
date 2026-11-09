@@ -7,6 +7,7 @@ using Studium_Booking.Data;
 using Studium_Booking.Domain.Entities.Bookings;
 using Studium_Booking.Domain.Entities.Waitlist;
 using Studium_Booking.Domain.Exceptions;
+using Studium_Booking.Services.Clients;
 using Studium_Booking.Services.DTOs;
 using Studium_Booking.Services.Options;
 using Wolverine;
@@ -20,6 +21,7 @@ public class BookingsController(
     BookingDbContext db,
     IMessageBus messageBus,
     IOptions<BookingOptions> options,
+    INotificationsClient notificationsClient,
     ILogger<BookingsController> logger) : ControllerBase
 {
     [HttpPost]
@@ -113,15 +115,12 @@ public class BookingsController(
             booking.Id.ToString(),
             nowUtc));
 
-        await messageBus.PublishAsync(new ReservationNotificationEvent(
-            "ReservationCreated",
-            booking.Id,
-            userId,
-            booking.RoomId,
-            booking.TimeSlot.StartsAtUtc,
-            booking.TimeSlot.EndsAtUtc,
-            $"Reservation '{booking.Title}' created successfully.",
-            nowUtc));
+        await notificationsClient.SendAsync(new CreateNotificationRequest(
+            UserId: userId,
+            Type: "RESERVATION_CREATED",
+            Title: "Reserva Confirmada",
+            Message: $"Reserva '{booking.Title}' criada com sucesso.",
+            Data: new { bookingId = booking.Id, roomId = booking.RoomId }), ct);
 
         logger.LogInformation("Reservation {BookingId} created for User {UserId} in Room {RoomId}.",
             booking.Id, userId, booking.RoomId);
@@ -303,15 +302,12 @@ public class BookingsController(
             booking.Id.ToString(),
             nowUtc));
 
-        await messageBus.PublishAsync(new ReservationNotificationEvent(
-            "ReservationCancelled",
-            booking.Id,
-            booking.UserId,
-            booking.RoomId,
-            booking.TimeSlot.StartsAtUtc,
-            booking.TimeSlot.EndsAtUtc,
-            $"Reservation cancelled: {request.Reason}",
-            nowUtc));
+        await notificationsClient.SendAsync(new CreateNotificationRequest(
+            UserId: booking.UserId,
+            Type: "RESERVATION_CANCELLED",
+            Title: "Reserva Cancelada",
+            Message: $"Reserva '{booking.Title}' foi cancelada: {request.Reason}",
+            Data: new { bookingId = booking.Id, roomId = booking.RoomId }), ct);
 
         // Waitlist slot promotion logic (UC016)
         var nextWaitlist = await db.WaitlistEntries
@@ -327,13 +323,12 @@ public class BookingsController(
             nextWaitlist.Notify(nowUtc);
             await db.SaveChangesAsync(ct);
 
-            await messageBus.PublishAsync(new WaitlistSlotAvailableEvent(
-                booking.RoomId,
-                nextWaitlist.Id,
-                nextWaitlist.UserId,
-                booking.TimeSlot.StartsAtUtc,
-                booking.TimeSlot.EndsAtUtc,
-                nowUtc));
+            await notificationsClient.SendAsync(new CreateNotificationRequest(
+                UserId: nextWaitlist.UserId,
+                Type: "WAITLIST_SLOT_AVAILABLE",
+                Title: "Vaga Disponível na Fila de Espera",
+                Message: $"Uma vaga foi liberada na sala {booking.RoomId}. Acesse a plataforma para confirmar sua reserva.",
+                Data: new { roomId = booking.RoomId, waitlistId = nextWaitlist.Id }), ct);
 
             logger.LogInformation("Notified waitlist candidate {WaitlistId} for newly freed slot in Room {RoomId}.",
                 nextWaitlist.Id, booking.RoomId);
@@ -388,15 +383,12 @@ public class BookingsController(
             booking.Id.ToString(),
             nowUtc));
 
-        await messageBus.PublishAsync(new ReservationNotificationEvent(
-            "NoShowRecorded",
-            booking.Id,
-            booking.UserId,
-            booking.RoomId,
-            booking.TimeSlot.StartsAtUtc,
-            booking.TimeSlot.EndsAtUtc,
-            "Reservation marked as No-Show.",
-            nowUtc));
+        await notificationsClient.SendAsync(new CreateNotificationRequest(
+            UserId: booking.UserId,
+            Type: "NO_SHOW_RECORDED",
+            Title: "Prazo de Presença Expirado",
+            Message: "Reserva marcada como ausência (No-Show).",
+            Data: new { bookingId = booking.Id, roomId = booking.RoomId }), ct);
 
         return Ok(ToDto(booking));
     }

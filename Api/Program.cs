@@ -37,6 +37,7 @@ builder.Services.CritterStackDefaults(options =>
 
 builder.AddStudiumMessaging();
 builder.AddStudiumAuthentication();
+builder.Services.AddNotificationsClient(builder.Configuration);
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

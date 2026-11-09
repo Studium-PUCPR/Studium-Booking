@@ -24,10 +24,6 @@ public static class MessagingExtensions
 
             var usersQueueName = builder.Configuration["RabbitMQ:UsersQueueName"] ?? "studium-users-events-queue";
             opts.PublishMessage<BookingIntegrationEvent>().ToRabbitQueue(usersQueueName);
-
-            var notificationsQueueName = builder.Configuration["RabbitMQ:NotificationsQueueName"] ?? "studium-notifications-queue";
-            opts.PublishMessage<ReservationNotificationEvent>().ToRabbitQueue(notificationsQueueName);
-            opts.PublishMessage<WaitlistSlotAvailableEvent>().ToRabbitQueue(notificationsQueueName);
         });
     }
 }

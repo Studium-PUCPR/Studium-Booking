@@ -3,6 +3,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Net.Http;
 
 namespace Internal.Generated.WolverineHandlers
 {
@@ -11,25 +12,30 @@ namespace Internal.Generated.WolverineHandlers
     public sealed class CheckReservationNoShowMessageHandler1872310866 : Wolverine.Runtime.Handlers.MessageHandler
     {
         private readonly Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> _dbContextOptionsOfBookingDbContext;
+        private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Clients.NotificationsClient> _loggerOfNotificationsClient;
         private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.CheckReservationNoShowHandler> _loggerOfCheckReservationNoShowHandler;
         private readonly Microsoft.Extensions.Options.IOptions<Studium_Booking.Services.Options.BookingOptions> _optionsOfBookingOptions;
+        private readonly System.Net.Http.IHttpClientFactory _httpClientFactory;
 
-        public CheckReservationNoShowMessageHandler1872310866(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.CheckReservationNoShowHandler> loggerOfCheckReservationNoShowHandler, Microsoft.Extensions.Options.IOptions<Studium_Booking.Services.Options.BookingOptions> optionsOfBookingOptions)
+        public CheckReservationNoShowMessageHandler1872310866(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Clients.NotificationsClient> loggerOfNotificationsClient, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.CheckReservationNoShowHandler> loggerOfCheckReservationNoShowHandler, Microsoft.Extensions.Options.IOptions<Studium_Booking.Services.Options.BookingOptions> optionsOfBookingOptions, System.Net.Http.IHttpClientFactory httpClientFactory)
         {
             _dbContextOptionsOfBookingDbContext = dbContextOptionsOfBookingDbContext;
+            _loggerOfNotificationsClient = loggerOfNotificationsClient;
             _loggerOfCheckReservationNoShowHandler = loggerOfCheckReservationNoShowHandler;
             _optionsOfBookingOptions = optionsOfBookingOptions;
+            _httpClientFactory = httpClientFactory;
         }
 
         public override async System.Threading.Tasks.Task HandleAsync(Wolverine.Runtime.MessageContext context, System.Threading.CancellationToken cancellation)
         {
+            var notificationsClient = new Studium_Booking.Services.Clients.NotificationsClient(_httpClientFactory, _loggerOfNotificationsClient);
             await using var bookingDbContext = new Studium_Booking.Data.BookingDbContext(_dbContextOptionsOfBookingDbContext);
             // The actual message body
             var checkReservationNoShowMessage = (Studium_Booking.Services.DTOs.CheckReservationNoShowMessage)context.Envelope.Message;
 
             Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("message.handler", "Studium_Booking.Services.Handlers.CheckReservationNoShowHandler");
             Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("handler.type", "Studium_Booking.Services.Handlers.CheckReservationNoShowHandler");
-            var checkReservationNoShowHandler = new Studium_Booking.Services.Handlers.CheckReservationNoShowHandler(bookingDbContext, context, _optionsOfBookingOptions, _loggerOfCheckReservationNoShowHandler);
+            var checkReservationNoShowHandler = new Studium_Booking.Services.Handlers.CheckReservationNoShowHandler(bookingDbContext, context, notificationsClient, _optionsOfBookingOptions, _loggerOfCheckReservationNoShowHandler);
             
             // The actual message execution
             await checkReservationNoShowHandler.HandleAsync(checkReservationNoShowMessage, cancellation).ConfigureAwait(false);

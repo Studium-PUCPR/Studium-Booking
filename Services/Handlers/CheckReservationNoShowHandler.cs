@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Studium_Booking.Data;
 using Studium_Booking.Domain.Entities.Bookings;
 using Studium_Booking.Domain.Entities.Waitlist;
+using Studium_Booking.Services.Clients;
 using Studium_Booking.Services.DTOs;
 using Studium_Booking.Services.Options;
 using Wolverine;
@@ -13,6 +14,7 @@ namespace Studium_Booking.Services.Handlers;
 public class CheckReservationNoShowHandler(
     BookingDbContext db,
     IMessageBus messageBus,
+    INotificationsClient notificationsClient,
     IOptions<BookingOptions> options,
     ILogger<CheckReservationNoShowHandler> logger)
 {
@@ -37,7 +39,6 @@ public class CheckReservationNoShowHandler(
 
         if (nowUtc < graceDeadline)
         {
-            // Reschedule if invoked prematurely
             var remainingDelay = graceDeadline - nowUtc;
             await messageBus.ScheduleAsync(new CheckReservationNoShowMessage(booking.Id), remainingDelay);
             return;
@@ -52,17 +53,13 @@ public class CheckReservationNoShowHandler(
             booking.Id.ToString(),
             nowUtc));
 
-        await messageBus.PublishAsync(new ReservationNotificationEvent(
-            "NoShowRecorded",
-            booking.Id,
-            booking.UserId,
-            booking.RoomId,
-            booking.TimeSlot.StartsAtUtc,
-            booking.TimeSlot.EndsAtUtc,
-            "Reservation marked as No-Show due to unconfirmed attendance.",
-            nowUtc));
+        await notificationsClient.SendAsync(new CreateNotificationRequest(
+            UserId: booking.UserId,
+            Type: "NO_SHOW_RECORDED",
+            Title: "Prazo de Presença Expirado",
+            Message: $"Sua reserva na sala {booking.RoomId} foi cancelada por ausência de check-in dentro da tolerância de {options.Value.GraceMinutesAfterCheckIn} minutos.",
+            Data: new { bookingId = booking.Id, roomId = booking.RoomId }), ct);
 
-        // Check if waitlist has candidates for newly freed slot
         var nextWaitlist = await db.WaitlistEntries
             .Where(w => w.RoomId == booking.RoomId &&
                         w.Status == WaitlistStatus.Pending &&
@@ -76,13 +73,12 @@ public class CheckReservationNoShowHandler(
             nextWaitlist.Notify(nowUtc);
             await db.SaveChangesAsync(ct);
 
-            await messageBus.PublishAsync(new WaitlistSlotAvailableEvent(
-                booking.RoomId,
-                nextWaitlist.Id,
-                nextWaitlist.UserId,
-                booking.TimeSlot.StartsAtUtc,
-                booking.TimeSlot.EndsAtUtc,
-                nowUtc));
+            await notificationsClient.SendAsync(new CreateNotificationRequest(
+                UserId: nextWaitlist.UserId,
+                Type: "WAITLIST_SLOT_AVAILABLE",
+                Title: "Vaga Disponível na Fila de Espera",
+                Message: $"Uma vaga foi liberada na sala {booking.RoomId}. Acesse a plataforma para confirmar sua reserva.",
+                Data: new { roomId = booking.RoomId, waitlistId = nextWaitlist.Id }), ct);
         }
 
         logger.LogWarning("Reservation {BookingId} automatically marked as No-Show. NoShowRecorded event dispatched.",
