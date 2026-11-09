@@ -131,3 +131,6 @@
   - Generated Wolverine static handler codegen via `codegen write`.
   - Added production-grade Dockerfile, `k8s/deployment.yaml` with 3 replicas and HPA, and `.github/workflows/ci-cd.yml` with dynamic secret assembly.
   - Successfully verified CI/CD build and deployed 3 live replicas to Amazon EKS in the `studium` namespace.
+
+- **2026-11-08 (Enforce Role-based Duration Limits):**
+  - Enforced max 2 hours reservation duration for Students and max 5 hours for Professors and Administrators in `BookingsController` and `WaitlistController`.

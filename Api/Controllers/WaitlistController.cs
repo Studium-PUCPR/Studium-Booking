@@ -24,6 +24,18 @@ public class WaitlistController(BookingDbContext db) : ControllerBase
         var nowUtc = DateTime.UtcNow;
 
         var timeSlot = new ReservationTimeSlot(request.StartsAtUtc, request.EndsAtUtc);
+        var duration = timeSlot.Duration;
+        var isProfessorOrAdmin = User.IsAdmin() || User.IsInRole("Professor");
+
+        if (!isProfessorOrAdmin && duration > TimeSpan.FromHours(2))
+        {
+            throw new BookingConflictException("Students are restricted to a maximum reservation duration of 2 hours.");
+        }
+
+        if (duration > TimeSpan.FromHours(5))
+        {
+            throw new BookingConflictException("Reservation duration cannot exceed 5 hours.");
+        }
 
         var existingEntry = await db.WaitlistEntries
             .AnyAsync(w => w.RoomId == request.RoomId &&
