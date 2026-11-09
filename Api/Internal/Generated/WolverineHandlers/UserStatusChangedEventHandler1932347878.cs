@@ -10,12 +10,12 @@ namespace Internal.Generated.WolverineHandlers
     public sealed class UserStatusChangedEventHandler1932347878 : Wolverine.Runtime.Handlers.MessageHandler
     {
         private readonly Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> _dbContextOptionsOfBookingDbContext;
-        private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.UserStatusChangedHandler> _loggerOfUserStatusChangedHandler;
+        private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.UserEligibilitySyncHandler> _loggerOfUserEligibilitySyncHandler;
 
-        public UserStatusChangedEventHandler1932347878(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.UserStatusChangedHandler> loggerOfUserStatusChangedHandler)
+        public UserStatusChangedEventHandler1932347878(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.UserEligibilitySyncHandler> loggerOfUserEligibilitySyncHandler)
         {
             _dbContextOptionsOfBookingDbContext = dbContextOptionsOfBookingDbContext;
-            _loggerOfUserStatusChangedHandler = loggerOfUserStatusChangedHandler;
+            _loggerOfUserEligibilitySyncHandler = loggerOfUserEligibilitySyncHandler;
         }
 
         public override async System.Threading.Tasks.Task HandleAsync(Wolverine.Runtime.MessageContext context, System.Threading.CancellationToken cancellation)
@@ -24,12 +24,12 @@ namespace Internal.Generated.WolverineHandlers
             // The actual message body
             var userStatusChangedEvent = (Studium_Booking.Services.DTOs.UserStatusChangedEvent)context.Envelope.Message;
 
-            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("message.handler", "Studium_Booking.Services.Handlers.UserStatusChangedHandler");
-            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("handler.type", "Studium_Booking.Services.Handlers.UserStatusChangedHandler");
-            var userStatusChangedHandler = new Studium_Booking.Services.Handlers.UserStatusChangedHandler(bookingDbContext, _loggerOfUserStatusChangedHandler);
+            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("message.handler", "Studium_Booking.Services.Handlers.UserEligibilitySyncHandler");
+            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("handler.type", "Studium_Booking.Services.Handlers.UserEligibilitySyncHandler");
+            var userEligibilitySyncHandler = new Studium_Booking.Services.Handlers.UserEligibilitySyncHandler(bookingDbContext, _loggerOfUserEligibilitySyncHandler);
             
             // The actual message execution
-            await userStatusChangedHandler.HandleAsync(userStatusChangedEvent, cancellation).ConfigureAwait(false);
+            await userEligibilitySyncHandler.HandleAsync(userStatusChangedEvent, cancellation).ConfigureAwait(false);
         }
     }
 

@@ -47,8 +47,8 @@ public class CheckReservationNoShowHandler(
         booking.MarkNoShow(nowUtc, options.Value.GraceMinutesAfterCheckIn);
         await db.SaveChangesAsync(ct);
 
-        await messageBus.PublishAsync(new BookingIntegrationEvent(
-            BookingEventType.NoShowRecorded,
+        await messageBus.PublishAsync(new UserActivityIntegrationEvent(
+            UserActivityType.NoShowRecorded,
             booking.UserId,
             booking.Id.ToString(),
             nowUtc));

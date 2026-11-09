@@ -10,12 +10,12 @@ namespace Internal.Generated.WolverineHandlers
     public sealed class RoomStatusChangedEventHandler2067729770 : Wolverine.Runtime.Handlers.MessageHandler
     {
         private readonly Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> _dbContextOptionsOfBookingDbContext;
-        private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.CatalogEventsHandler> _loggerOfCatalogEventsHandler;
+        private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler> _loggerOfSpaceAvailabilitySyncHandler;
 
-        public RoomStatusChangedEventHandler2067729770(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.CatalogEventsHandler> loggerOfCatalogEventsHandler)
+        public RoomStatusChangedEventHandler2067729770(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler> loggerOfSpaceAvailabilitySyncHandler)
         {
             _dbContextOptionsOfBookingDbContext = dbContextOptionsOfBookingDbContext;
-            _loggerOfCatalogEventsHandler = loggerOfCatalogEventsHandler;
+            _loggerOfSpaceAvailabilitySyncHandler = loggerOfSpaceAvailabilitySyncHandler;
         }
 
         public override async System.Threading.Tasks.Task HandleAsync(Wolverine.Runtime.MessageContext context, System.Threading.CancellationToken cancellation)
@@ -24,12 +24,12 @@ namespace Internal.Generated.WolverineHandlers
             // The actual message body
             var roomStatusChangedEvent = (Studium_Booking.Services.DTOs.RoomStatusChangedEvent)context.Envelope.Message;
 
-            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("message.handler", "Studium_Booking.Services.Handlers.CatalogEventsHandler");
-            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("handler.type", "Studium_Booking.Services.Handlers.CatalogEventsHandler");
-            var catalogEventsHandler = new Studium_Booking.Services.Handlers.CatalogEventsHandler(bookingDbContext, _loggerOfCatalogEventsHandler);
+            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("message.handler", "Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler");
+            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("handler.type", "Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler");
+            var spaceAvailabilitySyncHandler = new Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler(bookingDbContext, _loggerOfSpaceAvailabilitySyncHandler);
             
             // The actual message execution
-            await catalogEventsHandler.HandleAsync(roomStatusChangedEvent, cancellation).ConfigureAwait(false);
+            await spaceAvailabilitySyncHandler.HandleAsync(roomStatusChangedEvent, cancellation).ConfigureAwait(false);
         }
     }
 

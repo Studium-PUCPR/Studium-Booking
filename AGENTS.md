@@ -18,20 +18,26 @@
 ### 1.2 Hybrid Communication: RabbitMQ (Async) + INotificationsClient (Sync)
 - **Problem Solved:** While inter-service state propagation and audit tracking must remain strictly asynchronous (RabbitMQ), immediate user alerts (such as missed check-in deadlines and booking confirmations) are dispatched synchronously to `Studium-Notifications`.
 - **Chosen Solution:**
-  - Inbound (`studium-booking-events-queue`): Receives catalog events (`RoomStatusChangedEvent`, `RoomMaintenanceEvent`, etc.) and `UserStatusChangedEvent`.
-  - Outbound (`studium-users-events-queue`): Publishes `BookingIntegrationEvent` (`ReservationCreated`, `ReservationCheckedIn`, `ReservationCancelled`, `NoShowRecorded`) for infraction counters in `Studium-Users`.
+  - Inbound (`studium-booking-events-queue`): Receives catalog space availability events (`RoomStatusChangedEvent`, `RoomMaintenanceEvent`, etc.) and `UserStatusChangedEvent`.
+  - Outbound (`studium-users-events-queue`): Publishes `UserActivityIntegrationEvent` (`[MessageIdentity("studium.users.user-activity")]`) to update activity counters and infraction tracking in `Studium-Users`.
   - Synchronous HTTP (`INotificationsClient`): Dispatches `POST /api/notifications` directly to `Studium-Notifications` using a typed `HttpClient` with standard resilience.
 
-### 1.3 Pre-Generated Wolverine Codegen in Docker Build
+### 1.3 Ubiquitous Language & Domain Handler Naming
+- **Context:** Handlers named after external sender services (`CatalogEventsHandler`, `UserStatusChangedHandler`) created conceptual coupling that obscured domain responsibility in `Studium-Booking`.
+- **Decision:**
+  - Renamed `CatalogEventsHandler` to `SpaceAvailabilitySyncHandler` to emphasize that it synchronizes room availability and maintenance windows for bookings.
+  - Renamed `UserStatusChangedHandler` to `UserEligibilitySyncHandler` to clarify that it maintains the local `BlockedUsers` read model for reservation authorization.
+
+### 1.4 Pre-Generated Wolverine Codegen in Docker Build
 - In Docker production containers, dynamic Roslyn compilation causes cold-start latency and container timeouts.
 - `CritterStackDefaults` is configured with `TypeLoadMode.Static` in Production, and `codegen write` pre-generates handler code during Docker multi-stage builds.
 
-### 1.4 Horizontal Scalability & Kubernetes Topology (Rubric Anchor R2/R3)
+### 1.5 Horizontal Scalability & Kubernetes Topology (Rubric Anchor R2/R3)
 - Configured `k8s/deployment.yaml` with `replicas: 3` under the unified `studium` namespace.
 - Added HorizontalPodAutoscaler targeting 90% CPU utilization (min 3, max 6 replicas).
 - Health probes configured at `/health` with cold start delays (liveness 30s, readiness 15s) to allow startup database migrations to finish.
 
-### 1.5 Concurrency Protection: PostgreSQL GiST Exclusion Constraint
+### 1.6 Concurrency Protection: PostgreSQL GiST Exclusion Constraint
 - With 3 pod replicas running concurrently, application-level `AnyAsync` validation checks suffer from race conditions.
 - Enforced at PostgreSQL engine level using `btree_gist` extension with `tstzrange`:
   ```sql
@@ -54,7 +60,7 @@
   - `Entities/Bookings/Booking.cs` — Rich domain entity with temporal interval logic, status transitions, and check-in codes.
   - `Entities/Bookings/ReservationTimeSlot.cs` — Value object modeling UTC intervals and duration calculations.
   - `Entities/Waitlist/WaitlistEntry.cs` — Queuing entity for fully booked space promotion.
-  - `Entities/Replication/ReplicatedRoom.cs`, `ReplicatedMaintenanceBlock.cs`, `ReplicatedOperatingHours.cs` — Autonomous local read models.
+  - `Entities/ReplicatedCatalog/ReplicatedRoom.cs`, `ReplicatedMaintenanceBlock.cs`, `ReplicatedOperatingHours.cs` — Autonomous local read models.
   - `Entities/Users/BlockedUser.cs` — Read model synchronized from `Studium-Users`.
 - `Data/`:
   - `BookingDbContext.cs` — EF Core context with GiST exclusion constraint and btree_gist extension.
@@ -62,7 +68,7 @@
   - `Migrations/` — Auto-applied migrations.
 - `Services/`:
   - `Clients/` — `INotificationsClient.cs` and `NotificationsClient.cs` for synchronous HTTP dispatch.
-  - `Handlers/` — Wolverine event handlers (`CatalogEventsHandler`, `UserEventsHandler`, `CheckReservationNoShowHandler`).
+  - `Handlers/` — Wolverine event handlers (`SpaceAvailabilitySyncHandler`, `UserEligibilitySyncHandler`, `CheckReservationNoShowHandler`).
   - `DTOs/` — Request, response, and event contracts.
 - `Api/`:
   - `Controllers/BookingsController.cs`, `WaitlistController.cs` — REST endpoints.
@@ -73,12 +79,18 @@
 ---
 
 ## 3. Recent Changes History
-- **2026-11-08 (Initial Implementation & Deployment):**
-  - Scaffolded .NET 10 microservice with 3 replicas, GiST exclusion constraints, and 26 unit tests.
-- **2026-11-09 (RabbitMQ Migration & SQS Storage Branch):**
-  - Migrated messaging to `WolverineFx.RabbitMQ` (`6.63.0`) over AMQP broker (`studium-rabbitmq-service:5672`).
+- **2026-11-09 (Ubiquitous Language Refactor — SpaceAvailabilitySyncHandler & UserEligibilitySyncHandler):**
+  - Renamed `CatalogEventsHandler` to `SpaceAvailabilitySyncHandler` in `Services/Handlers/`.
+  - Renamed `UserStatusChangedHandler` to `UserEligibilitySyncHandler` in `Services/Handlers/`.
+  - Replaced `BookingIntegrationEvent` with `UserActivityIntegrationEvent` (`[MessageIdentity("studium.users.user-activity")]`).
+  - Removed dead notification event definitions (`ReservationNotificationEvent`, `WaitlistSlotAvailableEvent`).
+  - Updated `appsettings.json` removing obsolete SQS configuration.
+  - Regenerated Wolverine static handlers and verified all 26 unit tests pass.
 - **2026-11-09 (Synchronous Notification Client Integration):**
   - Implemented typed `INotificationsClient` dispatching alerts synchronously to `POST /api/notifications` in `Studium-Notifications`.
   - Updated `CheckReservationNoShowHandler` and `BookingsController` to synchronously deliver missed deadline and booking alerts.
   - Removed `studium-notifications-queue` publishing from RabbitMQ configuration.
-  - Re-generated static Wolverine handlers via `codegen write` and verified 26/26 unit tests.
+- **2026-11-09 (RabbitMQ Migration & SQS Storage Branch):**
+  - Migrated messaging to `WolverineFx.RabbitMQ` (`6.63.0`) over AMQP broker (`studium-rabbitmq-service:5672`).
+- **2026-11-08 (Initial Implementation & Deployment):**
+  - Scaffolded .NET 10 microservice with 3 replicas, GiST exclusion constraints, and 26 unit tests.

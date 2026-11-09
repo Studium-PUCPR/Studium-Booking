@@ -11,7 +11,7 @@ public static class MessagingExtensions
     {
         builder.Host.UseWolverine(opts =>
         {
-            opts.Discovery.IncludeAssembly(typeof(CatalogEventsHandler).Assembly);
+            opts.Discovery.IncludeAssembly(typeof(SpaceAvailabilitySyncHandler).Assembly);
 
             var rabbitConnectionString = builder.Configuration["RabbitMQ:ConnectionString"]
                 ?? builder.Configuration["RABBITMQ_URL"]
@@ -23,7 +23,7 @@ public static class MessagingExtensions
             opts.ListenToRabbitQueue(bookingQueueName);
 
             var usersQueueName = builder.Configuration["RabbitMQ:UsersQueueName"] ?? "studium-users-events-queue";
-            opts.PublishMessage<BookingIntegrationEvent>().ToRabbitQueue(usersQueueName);
+            opts.PublishMessage<UserActivityIntegrationEvent>().ToRabbitQueue(usersQueueName);
         });
     }
 }

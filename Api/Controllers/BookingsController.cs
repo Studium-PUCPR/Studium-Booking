@@ -109,8 +109,8 @@ public class BookingsController(
             await messageBus.ScheduleAsync(new CheckReservationNoShowMessage(booking.Id), noShowDelay);
         }
 
-        await messageBus.PublishAsync(new BookingIntegrationEvent(
-            BookingEventType.ReservationCreated,
+        await messageBus.PublishAsync(new UserActivityIntegrationEvent(
+            UserActivityType.ReservationCreated,
             userId,
             booking.Id.ToString(),
             nowUtc));
@@ -245,8 +245,8 @@ public class BookingsController(
 
         await db.SaveChangesAsync(ct);
 
-        await messageBus.PublishAsync(new BookingIntegrationEvent(
-            BookingEventType.ReservationCheckedIn,
+        await messageBus.PublishAsync(new UserActivityIntegrationEvent(
+            UserActivityType.ReservationCheckedIn,
             booking.UserId,
             booking.Id.ToString(),
             nowUtc));
@@ -296,8 +296,8 @@ public class BookingsController(
         booking.Cancel(request.Reason, nowUtc, currentUserId, isAdmin);
         await db.SaveChangesAsync(ct);
 
-        await messageBus.PublishAsync(new BookingIntegrationEvent(
-            BookingEventType.ReservationCancelled,
+        await messageBus.PublishAsync(new UserActivityIntegrationEvent(
+            UserActivityType.ReservationCancelled,
             booking.UserId,
             booking.Id.ToString(),
             nowUtc));
@@ -377,8 +377,8 @@ public class BookingsController(
         booking.MarkNoShow(nowUtc, options.Value.GraceMinutesAfterCheckIn);
         await db.SaveChangesAsync(ct);
 
-        await messageBus.PublishAsync(new BookingIntegrationEvent(
-            BookingEventType.NoShowRecorded,
+        await messageBus.PublishAsync(new UserActivityIntegrationEvent(
+            UserActivityType.NoShowRecorded,
             booking.UserId,
             booking.Id.ToString(),
             nowUtc));

@@ -6,9 +6,12 @@ using Studium_Booking.Services.DTOs;
 
 namespace Studium_Booking.Services.Handlers;
 
-public class UserStatusChangedHandler(
+/// <summary>
+/// Subscribes to user status changes to maintain the local BlockedUsers read model for reservation eligibility.
+/// </summary>
+public class UserEligibilitySyncHandler(
     BookingDbContext db,
-    ILogger<UserStatusChangedHandler> logger)
+    ILogger<UserEligibilitySyncHandler> logger)
 {
     public async Task HandleAsync(UserStatusChangedEvent message, CancellationToken ct = default)
     {

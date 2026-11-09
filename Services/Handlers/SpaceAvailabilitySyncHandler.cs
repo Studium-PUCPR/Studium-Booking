@@ -6,9 +6,12 @@ using Studium_Booking.Services.DTOs;
 
 namespace Studium_Booking.Services.Handlers;
 
-public class CatalogEventsHandler(
+/// <summary>
+/// Subscribes to catalog room state, maintenance blocks, and operating hours to synchronize local reservation availability.
+/// </summary>
+public class SpaceAvailabilitySyncHandler(
     BookingDbContext db,
-    ILogger<CatalogEventsHandler> logger)
+    ILogger<SpaceAvailabilitySyncHandler> logger)
 {
     public async Task HandleAsync(RoomStatusChangedEvent message, CancellationToken ct = default)
     {

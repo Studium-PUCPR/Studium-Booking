@@ -10,12 +10,12 @@ namespace Internal.Generated.WolverineHandlers
     public sealed class ResourceUpdatedEventHandler364348174 : Wolverine.Runtime.Handlers.MessageHandler
     {
         private readonly Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> _dbContextOptionsOfBookingDbContext;
-        private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.CatalogEventsHandler> _loggerOfCatalogEventsHandler;
+        private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler> _loggerOfSpaceAvailabilitySyncHandler;
 
-        public ResourceUpdatedEventHandler364348174(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.CatalogEventsHandler> loggerOfCatalogEventsHandler)
+        public ResourceUpdatedEventHandler364348174(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler> loggerOfSpaceAvailabilitySyncHandler)
         {
             _dbContextOptionsOfBookingDbContext = dbContextOptionsOfBookingDbContext;
-            _loggerOfCatalogEventsHandler = loggerOfCatalogEventsHandler;
+            _loggerOfSpaceAvailabilitySyncHandler = loggerOfSpaceAvailabilitySyncHandler;
         }
 
         public override async System.Threading.Tasks.Task HandleAsync(Wolverine.Runtime.MessageContext context, System.Threading.CancellationToken cancellation)
@@ -24,12 +24,12 @@ namespace Internal.Generated.WolverineHandlers
             // The actual message body
             var resourceUpdatedEvent = (Studium_Booking.Services.DTOs.ResourceUpdatedEvent)context.Envelope.Message;
 
-            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("message.handler", "Studium_Booking.Services.Handlers.CatalogEventsHandler");
-            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("handler.type", "Studium_Booking.Services.Handlers.CatalogEventsHandler");
-            var catalogEventsHandler = new Studium_Booking.Services.Handlers.CatalogEventsHandler(bookingDbContext, _loggerOfCatalogEventsHandler);
+            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("message.handler", "Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler");
+            Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("handler.type", "Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler");
+            var spaceAvailabilitySyncHandler = new Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler(bookingDbContext, _loggerOfSpaceAvailabilitySyncHandler);
             
             // The actual message execution
-            await catalogEventsHandler.HandleAsync(resourceUpdatedEvent, cancellation).ConfigureAwait(false);
+            await spaceAvailabilitySyncHandler.HandleAsync(resourceUpdatedEvent, cancellation).ConfigureAwait(false);
         }
     }
 
