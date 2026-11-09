@@ -20,3 +20,16 @@ public record UserActivityIntegrationEvent(
     string? ActivityReferenceId,
     DateTime OccurredAtUtc
 );
+
+/// <summary>
+/// Outbound message payload published to Studium-Audit for immutable compliance logging.
+/// </summary>
+[MessageIdentity("studium.audit.integration-event")]
+public record AuditIntegrationEvent(
+    string ServiceSource,
+    string ResourceId,
+    string ActorId,
+    string Action,
+    string? MetadataJson = null,
+    DateTime? TimestampUtc = null
+);

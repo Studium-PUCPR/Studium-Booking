@@ -14,6 +14,7 @@ data:
   RabbitMQ__ConnectionString: "amqp://studium:StudiumRabbitMQ2026!@studium-rabbitmq-service.studium.svc.cluster.local:5672"
   RabbitMQ__BookingQueueName: "studium-booking-events-queue"
   RabbitMQ__UsersQueueName: "studium-users-events-queue"
+  RabbitMQ__AuditQueueName: "studium-audit-events-queue"
   Services__NotificationsUrl: "http://studium-notifications-service.studium.svc.cluster.local"
   Booking__DefaultTimeZone: "America/Sao_Paulo"
   Booking__GraceMinutesBeforeCheckIn: "15"

@@ -13,15 +13,28 @@ public class NotificationsClient(IHttpClientFactory httpClientFactory, ILogger<N
 
     public async Task SendAsync(CreateNotificationRequest request, CancellationToken ct = default)
     {
-        try
+        var client = httpClientFactory.CreateClient(HttpClientName);
+        const int maxAttempts = 3;
+        var delays = new[] { TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(1000) };
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            var client = httpClientFactory.CreateClient(HttpClientName);
-            var response = await client.PostAsJsonAsync("/api/notifications", request, ct);
-            response.EnsureSuccessStatusCode();
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to deliver synchronous notification to user {UserId}", request.UserId);
+            try
+            {
+                var response = await client.PostAsJsonAsync("/api/notifications", request, ct);
+                response.EnsureSuccessStatusCode();
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts && !ct.IsCancellationRequested)
+            {
+                logger.LogWarning(ex, "Attempt {Attempt} to deliver synchronous notification to user {UserId} failed. Retrying in {Delay}ms...",
+                    attempt, request.UserId, delays[attempt - 1].TotalMilliseconds);
+                await Task.Delay(delays[attempt - 1], ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Final attempt {Attempt} to deliver synchronous notification to user {UserId} failed", attempt, request.UserId);
+            }
         }
     }
 }

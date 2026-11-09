@@ -115,6 +115,14 @@ public class BookingsController(
             booking.Id.ToString(),
             nowUtc));
 
+        await messageBus.PublishAsync(new AuditIntegrationEvent(
+            ServiceSource: "Booking",
+            ResourceId: booking.Id.ToString(),
+            ActorId: userId,
+            Action: "BookingCreated",
+            MetadataJson: $"{{\"title\":\"{booking.Title}\",\"roomId\":\"{booking.RoomId}\"}}",
+            TimestampUtc: nowUtc));
+
         await notificationsClient.SendAsync(new CreateNotificationRequest(
             UserId: userId,
             Type: "RESERVATION_CREATED",
@@ -251,6 +259,14 @@ public class BookingsController(
             booking.Id.ToString(),
             nowUtc));
 
+        await messageBus.PublishAsync(new AuditIntegrationEvent(
+            ServiceSource: "Booking",
+            ResourceId: booking.Id.ToString(),
+            ActorId: booking.UserId,
+            Action: "BookingCheckedIn",
+            MetadataJson: $"{{\"roomId\":\"{booking.RoomId}\"}}",
+            TimestampUtc: nowUtc));
+
         logger.LogInformation("Reservation {BookingId} checked in successfully at {Time}.", id, nowUtc);
         return Ok(ToDto(booking));
     }
@@ -271,6 +287,14 @@ public class BookingsController(
 
         booking.CheckOut(nowUtc, currentUserId);
         await db.SaveChangesAsync(ct);
+
+        await messageBus.PublishAsync(new AuditIntegrationEvent(
+            ServiceSource: "Booking",
+            ResourceId: booking.Id.ToString(),
+            ActorId: currentUserId,
+            Action: "BookingCheckedOut",
+            MetadataJson: $"{{\"roomId\":\"{booking.RoomId}\"}}",
+            TimestampUtc: nowUtc));
 
         logger.LogInformation("Reservation {BookingId} checked out successfully at {Time}.", id, nowUtc);
         return Ok(ToDto(booking));
@@ -301,6 +325,14 @@ public class BookingsController(
             booking.UserId,
             booking.Id.ToString(),
             nowUtc));
+
+        await messageBus.PublishAsync(new AuditIntegrationEvent(
+            ServiceSource: "Booking",
+            ResourceId: booking.Id.ToString(),
+            ActorId: currentUserId,
+            Action: "BookingCancelled",
+            MetadataJson: $"{{\"reason\":\"{request.Reason}\"}}",
+            TimestampUtc: nowUtc));
 
         await notificationsClient.SendAsync(new CreateNotificationRequest(
             UserId: booking.UserId,
@@ -365,6 +397,7 @@ public class BookingsController(
     [HttpPost("{id:guid}/mark-no-show")]
     public async Task<ActionResult<BookingResponseDto>> MarkNoShow(Guid id, CancellationToken ct)
     {
+        var currentUserId = User.GetUserId();
         var isAdmin = User.IsAdmin();
         if (!isAdmin)
             throw new DomainException("FORBIDDEN", "Only administrators can manually mark reservations as No-Show.");
@@ -382,6 +415,14 @@ public class BookingsController(
             booking.UserId,
             booking.Id.ToString(),
             nowUtc));
+
+        await messageBus.PublishAsync(new AuditIntegrationEvent(
+            ServiceSource: "Booking",
+            ResourceId: booking.Id.ToString(),
+            ActorId: currentUserId,
+            Action: "NoShowRecorded",
+            MetadataJson: $"{{\"roomId\":\"{booking.RoomId}\"}}",
+            TimestampUtc: nowUtc));
 
         await notificationsClient.SendAsync(new CreateNotificationRequest(
             UserId: booking.UserId,

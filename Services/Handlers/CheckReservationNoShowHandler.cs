@@ -53,6 +53,14 @@ public class CheckReservationNoShowHandler(
             booking.Id.ToString(),
             nowUtc));
 
+        await messageBus.PublishAsync(new AuditIntegrationEvent(
+            ServiceSource: "Booking",
+            ResourceId: booking.Id.ToString(),
+            ActorId: "System",
+            Action: "NoShowRecorded",
+            MetadataJson: $"{{\"reason\":\"Check-in grace period expired\",\"roomId\":\"{booking.RoomId}\"}}",
+            TimestampUtc: nowUtc));
+
         await notificationsClient.SendAsync(new CreateNotificationRequest(
             UserId: booking.UserId,
             Type: "NO_SHOW_RECORDED",

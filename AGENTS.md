@@ -20,7 +20,9 @@
 - **Chosen Solution:**
   - Inbound (`studium-booking-events-queue`): Receives catalog space availability events (`RoomStatusChangedEvent`, `RoomMaintenanceEvent`, etc.) and `UserStatusChangedEvent`.
   - Outbound (`studium-users-events-queue`): Publishes `UserActivityIntegrationEvent` (`[MessageIdentity("studium.users.user-activity")]`) to update activity counters and infraction tracking in `Studium-Users`.
-  - Synchronous HTTP (`INotificationsClient`): Dispatches `POST /api/notifications` directly to `Studium-Notifications` using a typed `HttpClient` with standard resilience.
+  - Outbound (`studium-audit-events-queue`): Publishes `AuditIntegrationEvent` (`[MessageIdentity("studium.audit.integration-event")]`) on booking creation, check-in, check-out, cancellation, and automated no-show.
+  - Synchronous HTTP (`INotificationsClient`): Dispatches `POST /api/notifications` directly to `Studium-Notifications` with a 3-attempt exponential backoff retry policy (200ms, 500ms, 1000ms).
+  - Outbox Middleware: Configured `opts.Policies.AutoApplyTransactions()` to guarantee transactional message publishing.
 
 ### 1.3 Ubiquitous Language & Domain Handler Naming
 - **Context:** Handlers named after external sender services (`CatalogEventsHandler`, `UserStatusChangedHandler`) created conceptual coupling that obscured domain responsibility in `Studium-Booking`.
@@ -38,27 +40,13 @@
 - Health probes configured at `/health` with cold start delays (liveness 30s, readiness 15s) to allow startup database migrations to finish.
 
 ### 1.6 Concurrency Protection: PostgreSQL GiST Exclusion Constraint
-- With 3 pod replicas running concurrently, application-level `AnyAsync` validation checks suffer from race conditions.
-- Enforced at PostgreSQL engine level using `btree_gist` extension with `tstzrange`:
-  ```sql
-  ALTER TABLE "Bookings"
-  ADD CONSTRAINT "CK_Bookings_NoDoubleBooking"
-  EXCLUDE USING gist (
-      "RoomId" WITH =,
-      tstzrange("StartsAtUtc", "EndsAtUtc") WITH &&
-  )
-  WHERE ("Status" IN (0, 1));
-  ```
-- Postgres error code `23P01` (`exclusion_violation`) is intercepted by `DomainExceptionHandler` and mapped to HTTP 409 Conflict.
+- Uses native PostgreSQL GiST indexing (`btree_gist` extension) to prevent double bookings at the database engine level via `EXCLUDE USING gist (room_id WITH =, time_slot WITH &&) WHERE (status IN ('Confirmed', 'CheckedIn'))`.
 
 ---
 
-## 2. Project Structure & File Map
-- [`Directory.Build.props`](./Directory.Build.props) & [`Directory.Packages.props`](./Directory.Packages.props) — CPM locking dependencies.
-- [`Studium-Booking.sln`](./Studium-Booking.sln) — Root solution.
+## 2. Directory Structure & Key Files
 - `Domain/`:
-  - `Entities/Bookings/Booking.cs` — Rich domain entity with temporal interval logic, status transitions, and check-in codes.
-  - `Entities/Bookings/ReservationTimeSlot.cs` — Value object modeling UTC intervals and duration calculations.
+  - `Entities/Bookings/Booking.cs` — Aggregate root enforcing business invariants.
   - `Entities/Waitlist/WaitlistEntry.cs` — Queuing entity for fully booked space promotion.
   - `Entities/ReplicatedCatalog/ReplicatedRoom.cs`, `ReplicatedMaintenanceBlock.cs`, `ReplicatedOperatingHours.cs` — Autonomous local read models.
   - `Entities/Users/BlockedUser.cs` — Read model synchronized from `Studium-Users`.
@@ -67,9 +55,9 @@
   - `Configurations/` — Fluent API configurations.
   - `Migrations/` — Auto-applied migrations.
 - `Services/`:
-  - `Clients/` — `INotificationsClient.cs` and `NotificationsClient.cs` for synchronous HTTP dispatch.
+  - `Clients/` — `INotificationsClient.cs` and `NotificationsClient.cs` with exponential backoff retry.
   - `Handlers/` — Wolverine event handlers (`SpaceAvailabilitySyncHandler`, `UserEligibilitySyncHandler`, `CheckReservationNoShowHandler`).
-  - `DTOs/` — Request, response, and event contracts.
+  - `DTOs/` — Request, response, and event contracts (`AuditIntegrationEvent`, `UserActivityIntegrationEvent`).
 - `Api/`:
   - `Controllers/BookingsController.cs`, `WaitlistController.cs` — REST endpoints.
   - `Extensions/` — WebApplicationBuilder extensions (`MessagingExtensions`, `AuthenticationExtensions`, `HttpClientExtensions`).
@@ -79,6 +67,13 @@
 ---
 
 ## 3. Recent Changes History
+- **2026-11-09 (Audit Integration, Resilient Retry & Wolverine Outbox):**
+  - Added `AuditIntegrationEvent` (`[MessageIdentity("studium.audit.integration-event")]`) published to `studium-audit-events-queue`.
+  - Wired `BookingsController` and `CheckReservationNoShowHandler` to publish compliance events on booking creation, check-in, check-out, cancellation, and no-show.
+  - Implemented 3-attempt exponential backoff retry policy (200ms, 500ms, 1000ms) in `NotificationsClient`.
+  - Enabled Wolverine transactional outbox via `opts.Policies.AutoApplyTransactions()`.
+  - Added `RabbitMQ:AuditQueueName` to `appsettings.json` and `k8s/deployment.yaml`.
+  - Regenerated Wolverine static handlers and verified all 26 unit tests pass.
 - **2026-11-09 (Ubiquitous Language Refactor — SpaceAvailabilitySyncHandler & UserEligibilitySyncHandler):**
   - Renamed `CatalogEventsHandler` to `SpaceAvailabilitySyncHandler` in `Services/Handlers/`.
   - Renamed `UserStatusChangedHandler` to `UserEligibilitySyncHandler` in `Services/Handlers/`.
