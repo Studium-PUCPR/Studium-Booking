@@ -8,6 +8,4 @@ public class BookingOptions
     public int GraceMinutesAfterCheckIn { get; set; } = 15;
     public int WaitlistClaimGraceMinutes { get; set; } = 15;
     public string DefaultTimeZone { get; set; } = "America/Sao_Paulo";
-    public int MaxNoShowsBeforeSuspension { get; set; } = 3;
-    public int DefaultSuspensionDays { get; set; } = 7;
 }

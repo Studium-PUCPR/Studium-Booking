@@ -2,6 +2,7 @@
 #pragma warning disable
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Net.Http;
 
 namespace Internal.Generated.WolverineHandlers
 {
@@ -10,23 +11,28 @@ namespace Internal.Generated.WolverineHandlers
     public sealed class ResourceUpdatedEventHandler364348174 : Wolverine.Runtime.Handlers.MessageHandler
     {
         private readonly Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> _dbContextOptionsOfBookingDbContext;
+        private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Clients.NotificationsClient> _loggerOfNotificationsClient;
         private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler> _loggerOfSpaceAvailabilitySyncHandler;
+        private readonly System.Net.Http.IHttpClientFactory _httpClientFactory;
 
-        public ResourceUpdatedEventHandler364348174(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler> loggerOfSpaceAvailabilitySyncHandler)
+        public ResourceUpdatedEventHandler364348174(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Clients.NotificationsClient> loggerOfNotificationsClient, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler> loggerOfSpaceAvailabilitySyncHandler, System.Net.Http.IHttpClientFactory httpClientFactory)
         {
             _dbContextOptionsOfBookingDbContext = dbContextOptionsOfBookingDbContext;
+            _loggerOfNotificationsClient = loggerOfNotificationsClient;
             _loggerOfSpaceAvailabilitySyncHandler = loggerOfSpaceAvailabilitySyncHandler;
+            _httpClientFactory = httpClientFactory;
         }
 
         public override async System.Threading.Tasks.Task HandleAsync(Wolverine.Runtime.MessageContext context, System.Threading.CancellationToken cancellation)
         {
+            var notificationsClient = new Studium_Booking.Services.Clients.NotificationsClient(_httpClientFactory, _loggerOfNotificationsClient);
             await using var bookingDbContext = new Studium_Booking.Data.BookingDbContext(_dbContextOptionsOfBookingDbContext);
             // The actual message body
             var resourceUpdatedEvent = (Studium_Booking.Services.DTOs.ResourceUpdatedEvent)context.Envelope.Message;
 
             Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("message.handler", "Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler");
             Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("handler.type", "Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler");
-            var spaceAvailabilitySyncHandler = new Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler(bookingDbContext, _loggerOfSpaceAvailabilitySyncHandler);
+            var spaceAvailabilitySyncHandler = new Studium_Booking.Services.Handlers.SpaceAvailabilitySyncHandler(bookingDbContext, context, notificationsClient, _loggerOfSpaceAvailabilitySyncHandler);
             
             // The actual message execution
             await spaceAvailabilitySyncHandler.HandleAsync(resourceUpdatedEvent, cancellation).ConfigureAwait(false);

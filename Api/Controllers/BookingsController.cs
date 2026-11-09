@@ -99,7 +99,15 @@ public class BookingsController(
             nowUtc);
 
         await db.Bookings.AddAsync(booking, ct);
-        await db.SaveChangesAsync(ct);
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.ExclusionViolation })
+        {
+            throw new BookingConflictException("The selected room was just reserved by another student for an overlapping time slot.");
+        }
 
         // Schedule automated 15-minute No-Show evaluation message
         var graceDeadline = booking.TimeSlot.StartsAtUtc.AddMinutes(options.Value.GraceMinutesAfterCheckIn);

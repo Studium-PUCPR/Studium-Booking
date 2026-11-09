@@ -7,77 +7,65 @@
 
 ## 1. Architectural Decisions & Conclusions Log
 
-### 1.1 Target Framework (`.NET 10.0`) & Clean Architecture
-- **Decision:** Build `Studium-Booking` matching the `Studium-Users` and `Studium-Catalog` gold standard with .NET 10 (`net10.0`), Central Package Management (`Directory.Packages.props`), and five Clean Architecture projects:
-  - `Studium-Booking.Domain` (zero external dependencies; rich entities and invariants)
-  - `Studium-Booking.Data` (EF Core 10, Npgsql PostgreSQL)
-  - `Studium-Booking.Services` (DTOs, Wolverine handlers, Mapster, `INotificationsClient`)
-  - `Studium-Booking.Api` (Thin composition root, Scalar, OpenAPI, Health check)
-  - `Studium-Booking.Tests` (xUnit test suite with 27 passing unit tests)
+### 1.1 Microservice Autonomy & Read Model Replication
+- **Clean CQRS Isolation:** `Studium-Booking` maintains its own read models for availability (`ReplicatedRooms`, `ReplicatedMaintenanceBlocks`, `ReplicatedOperatingHours`) and eligibility (`BlockedUsers`), completely isolating it from direct database links to `Studium-Catalog` or `Studium-Users`.
+- **Domain Cleanliness:** Leaked user policy options (`MaxNoShowsBeforeSuspension`, `DefaultSuspensionDays`) have been removed from `BookingOptions.cs`, keeping `Booking` strictly focused on space reservation, time windows, and waitlist management.
 
-### 1.2 Hybrid Communication: RabbitMQ (Async) + INotificationsClient (Sync)
-- **Problem Solved:** While inter-service state propagation and audit tracking must remain strictly asynchronous (RabbitMQ), immediate user alerts (such as missed check-in deadlines and booking confirmations) are dispatched synchronously to `Studium-Notifications`.
-- **Chosen Solution:**
-  - Inbound (`studium-booking-events-queue`): Receives catalog space availability events (`RoomStatusChangedEvent`, `RoomMaintenanceEvent`, etc.) and `UserStatusChangedEvent`.
-  - Outbound (`studium-users-events-queue`): Publishes `UserActivityIntegrationEvent` (`[MessageIdentity("studium.users.user-activity")]`) to update activity counters and infraction tracking in `Studium-Users`.
-  - Outbound (`studium-audit-events-queue`): Publishes `AuditIntegrationEvent` (`[MessageIdentity("studium.audit.integration-event")]`) on booking creation, check-in, check-out, cancellation, and automated no-show.
-  - Synchronous HTTP (`INotificationsClient`): Dispatches `POST /api/notifications` directly to `Studium-Notifications` with a 3-attempt exponential backoff retry policy (200ms, 500ms, 1000ms).
-  - Outbox Middleware: Configured `opts.Policies.AutoApplyTransactions()` to guarantee transactional message publishing.
-  - Poison Message & Dead-Letter Handling: Configured Wolverine transient exception retries (`NpgsqlException`, `TimeoutException`, `HttpRequestException`) with exponential cooldowns and unhandled errors routing directly to `.error` queue.
+### 1.2 Concurrency & Double-Booking Elimination
+- **PostgreSQL GiST Exclusion Constraint:** Enforced at the PostgreSQL storage engine level via `CK_Bookings_NoDoubleBooking` using `tsrange("StartsAtUtc", "EndsAtUtc") WITH &&` and `RoomId WITH =` where `Status IN (0, 1)`.
+- **Exclusion Violation Handling:** `CreateBooking` catches `DbUpdateException` with `PostgresErrorCodes.ExclusionViolation` (`23P01`) and throws `BookingConflictException`, returning a clean `409 Conflict`.
+- **Composite Index:** Created composite index `IX_Bookings_Room_Status_TimeSlot` on `("RoomId", "Status", "StartsAtUtc", "EndsAtUtc")` for instant conflict scans.
 
-### 1.3 Waitlist Expiration & Auto-Progression (UC016)
-- **Context:** When a booking was cancelled, the first candidate was notified, but if they failed to claim the reservation, the slot sat abandoned indefinitely.
-- **Decision:**
-  - Added configurable claim grace period (`WaitlistClaimGraceMinutes = 15`, default 15 min).
-  - Dispatches delayed message `CheckWaitlistClaimDeadlineMessage(Guid WaitlistId)`.
-  - Implemented `CheckWaitlistClaimDeadlineHandler` that marks unclaimed entries as `Expired` and automatically promotes and notifies the next candidate in line.
-  - Promotes active waitlist entries upon booking creation.
+### 1.3 Cascading Invalidation & Cancellation
+- **Room Maintenance Cascading:** When a `RoomMaintenanceEvent` (scheduled) is received in `SpaceAvailabilitySyncHandler`, active overlapping bookings are automatically cancelled with reason `"Room maintenance scheduled"`, audit logged, and notifications dispatched to affected students.
+- **User Suspension Cascading:** When a `UserStatusChangedEvent` (user blocked) is received in `UserEligibilitySyncHandler`, active upcoming reservations for that student are automatically cancelled, notifying the student and immediately promoting the next candidate in the waitlist.
 
-### 1.4 Database Resilience & Health Check Segregation
-- Configured Npgsql's transient execution strategy (`EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)`) to survive RDS multi-AZ failovers and network drops.
-- Segregated Kubernetes probes: shallow liveness at `/health` (process responsiveness) and deep readiness at `/health/ready` via `DatabaseHealthCheck` (`BookingDbContext.Database.CanConnectAsync()`).
+### 1.4 Waitlist Claim Grace Window & Auto-Progression (UC016)
+- **Configurable Grace Window:** `WaitlistClaimGraceMinutes` (default 15 minutes, configurable via `appsettings.json` and `Booking__WaitlistClaimGraceMinutes`).
+- **Delayed Message Bus Scheduling:** Promoted candidates receive a delayed message `CheckWaitlistClaimDeadlineMessage`. If unclaimed after grace expires, the candidate transitions to `Expired` and the next student in line is notified.
+
+### 1.5 Database Resilience, Health Checks & CORS
+- **Npgsql Retry Strategy:** Configured `EnableRetryOnFailure(3)` inside `UseNpgsql`.
+- **Health Segregation:** Shallow liveness `/health` and deep readiness `/health/ready` via zero-dependency `DatabaseHealthCheck`.
+- **Dynamic CORS:** Configured via `CorsExtensions.cs` reading `Cors:AllowedOrigins` with wildcard fallback.
 
 ---
 
-## 2. Directory Structure & Key Files
+## 2. Project Structure & File Map
+- [`Directory.Build.props`](./Directory.Build.props) & [`Directory.Packages.props`](./Directory.Packages.props) — CPM locking dependencies.
+- [`Studium-Booking.slnx`](./Studium-Booking.slnx) — Solution root.
 - `Domain/`:
-  - `Entities/Bookings/Booking.cs` — Aggregate root enforcing business invariants.
-  - `Entities/Waitlist/WaitlistEntry.cs` — Queuing entity for fully booked space promotion.
-  - `Entities/ReplicatedCatalog/ReplicatedRoom.cs`, `ReplicatedMaintenanceBlock.cs`, `ReplicatedOperatingHours.cs` — Autonomous local read models.
-  - `Entities/Users/BlockedUser.cs` — Read model synchronized from `Studium-Users`.
+  - `Entities/Bookings/Booking.cs`, `BookingStatus.cs`, `ReservationTimeSlot.cs`, `BookingAuditLog.cs`.
+  - `Entities/Waitlist/WaitlistEntry.cs`, `WaitlistStatus.cs`.
+  - `Entities/ReplicatedCatalog/ReplicatedRoom.cs`.
+  - `Entities/Users/BlockedUser.cs`.
 - `Data/`:
-  - `BookingDbContext.cs` — EF Core context with GiST exclusion constraint and btree_gist extension.
-  - `Configurations/` — Fluent API configurations.
-  - `Migrations/` — Auto-applied migrations.
+  - `BookingDbContext.cs`, `Configurations/BookingConfig.cs`.
+  - `Migrations/` — Includes GiST exclusion constraint and composite indexes.
 - `Services/`:
-  - `Clients/` — `INotificationsClient.cs` and `NotificationsClient.cs` with exponential backoff retry.
-  - `Handlers/` — Wolverine event handlers (`SpaceAvailabilitySyncHandler`, `UserEligibilitySyncHandler`, `CheckReservationNoShowHandler`, `CheckWaitlistClaimDeadlineHandler`).
-  - `DTOs/` — Request, response, and event contracts (`AuditIntegrationEvent`, `UserActivityIntegrationEvent`, `CheckWaitlistClaimDeadlineMessage`).
+  - `Handlers/SpaceAvailabilitySyncHandler.cs` — Maintenance synchronization & cascading cancellation.
+  - `Handlers/UserEligibilitySyncHandler.cs` — User block synchronization & cascading cancellation.
+  - `Handlers/CheckReservationNoShowHandler.cs` — 15-minute no-show automated evaluator.
+  - `Handlers/CheckWaitlistClaimDeadlineHandler.cs` — 15-minute claim deadline evaluator.
+  - `Options/BookingOptions.cs` — Grace periods, default timezone.
 - `Api/`:
-  - `Controllers/BookingsController.cs`, `WaitlistController.cs` — REST endpoints.
-  - `Extensions/` — WebApplicationBuilder extensions (`MessagingExtensions`, `AuthenticationExtensions`, `HttpClientExtensions`, `DatabaseHealthCheck`).
-  - `HostedServices/DatabaseMigrationHostedService.cs` — Startup migration runner.
-- `Tests/` — 27 unit tests covering domain rules, waitlist expiration, and mapping.
+  - `Controllers/BookingsController.cs`, `WaitlistController.cs`, `OccupancyController.cs`.
+  - `Extensions/MessagingExtensions.cs`, `AuthenticationExtensions.cs`, `DatabaseHealthCheck.cs`, `CorsExtensions.cs`.
+- `Tests/` — 28 unit tests passing.
+- [`Dockerfile`](./Dockerfile) & [`k8s/deployment.yaml`](./k8s/deployment.yaml) — Production containers and Kubernetes manifests.
 
 ---
 
 ## 3. Recent Changes History
-- **2026-11-09 (Waitlist Expiration Timer, Database Resilience & DLQ Policies):**
-  - Implemented `CheckWaitlistClaimDeadlineHandler` with configurable `WaitlistClaimGraceMinutes = 15`.
-  - Scheduled deadline checks on waitlist promotion across cancellation and no-show triggers; auto-promotes next in queue upon expiration.
-  - Configured `EnableRetryOnFailure(3)` on PostgreSQL connection.
-  - Separated shallow `/health` liveness probe and deep `/health/ready` probe (`DatabaseHealthCheck`).
-  - Configured Wolverine exception policies for transient retries and dead-letter error queue routing.
-  - Regenerated Wolverine static handlers; 27/27 unit tests pass.
-- **2026-11-09 (Audit Integration, Resilient Retry & Wolverine Outbox):**
-  - Added `AuditIntegrationEvent` (`[MessageIdentity("studium.audit.integration-event")]`) published to `studium-audit-events-queue`.
-  - Wired `BookingsController` and `CheckReservationNoShowHandler` to publish compliance events on booking creation, check-in, check-out, cancellation, and no-show.
-  - Implemented 3-attempt exponential backoff retry policy (200ms, 500ms, 1000ms) in `NotificationsClient`.
-  - Enabled Wolverine transactional outbox via `opts.Policies.AutoApplyTransactions()`.
-- **2026-11-09 (Ubiquitous Language Refactor — SpaceAvailabilitySyncHandler & UserEligibilitySyncHandler):**
-  - Renamed `CatalogEventsHandler` to `SpaceAvailabilitySyncHandler` in `Services/Handlers/`.
-  - Renamed `UserStatusChangedHandler` to `UserEligibilitySyncHandler` in `Services/Handlers/`.
-- **2026-11-09 (Synchronous Notification Client Integration):**
-  - Implemented typed `INotificationsClient` dispatching alerts synchronously to `POST /api/notifications` in `Studium-Notifications`.
-- **2026-11-09 (RabbitMQ Migration & SQS Storage Branch):**
-  - Migrated messaging to `WolverineFx.RabbitMQ` (`6.63.0`) over AMQP broker (`studium-rabbitmq-service:5672`).
+- **2026-11-09 (Cascading Invalidation, Double-Booking Handling, Composite Index & Domain Cleanliness):**
+  - Added exclusion violation catch (`PostgresErrorCodes.ExclusionViolation`) in `CreateBooking`.
+  - Added composite index `IX_Bookings_Room_Status_TimeSlot` via migration `20261109214025_Add_Booking_Composite_Index`.
+  - Implemented cascading cancellation in `SpaceAvailabilitySyncHandler` for scheduled maintenance blocks.
+  - Implemented cascading cancellation and waitlist promotion in `UserEligibilitySyncHandler` for suspended users.
+  - Removed leaked user options (`MaxNoShowsBeforeSuspension`, `DefaultSuspensionDays`) from `BookingOptions.cs` and manifests.
+  - Added `CorsExtensions.cs` for environment-driven CORS configuration.
+  - Regenerated Wolverine static handlers and verified 28/28 unit tests pass.
+- **2026-11-09 (Waitlist Auto-Expiration, DB Resilience & Deep Readiness Probe):**
+  - Implemented `WaitlistClaimGraceMinutes = 15` and `CheckWaitlistClaimDeadlineHandler`.
+  - Added `EnableRetryOnFailure(3)` and `/health/ready` probe.
+  - Added Wolverine retry policies and error queue routing.

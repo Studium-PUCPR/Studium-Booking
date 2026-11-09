@@ -51,9 +51,7 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 builder.Services.AddOpenApi();
-builder.Services.AddCors(options =>
-    options.AddPolicy("StudiumCors", policy =>
-        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
+builder.Services.AddStudiumCors(builder.Configuration);
 
 var app = builder.Build();
 

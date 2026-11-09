@@ -174,6 +174,21 @@ public class BookingTests
     }
 
     [Fact]
+    public void Cancel_ByAdminForMaintenance_ShouldRecordAdminAuditLog()
+    {
+        var startsAt = _now.AddHours(2);
+        var endsAt = startsAt.AddHours(1);
+        var slot = new ReservationTimeSlot(startsAt, endsAt);
+        var booking = Booking.Create(_roomId, UserId, "Meeting", null, slot, _now);
+
+        booking.Cancel("Room maintenance scheduled", _now.AddMinutes(10), "System", isAdmin: true);
+
+        Assert.Equal(BookingStatus.Cancelled, booking.Status);
+        Assert.Contains("maintenance", booking.CancellationReason);
+        Assert.Contains(booking.AuditLogs, a => a.PerformedByUserId == "System" && a.Action == "AdminCancelled");
+    }
+
+    [Fact]
     public void MarkNoShow_AfterGracePeriod_ShouldTransitionToNoShow()
     {
         var startsAt = _now.AddHours(1);

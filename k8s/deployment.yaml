@@ -20,8 +20,6 @@ data:
   Booking__GraceMinutesBeforeCheckIn: "15"
   Booking__GraceMinutesAfterCheckIn: "15"
   Booking__WaitlistClaimGraceMinutes: "15"
-  Booking__MaxNoShowsBeforeSuspension: "3"
-  Booking__DefaultSuspensionDays: "7"
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -1,8 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Studium_Booking.Data;
+using Studium_Booking.Domain.Entities.Bookings;
 using Studium_Booking.Domain.Entities.ReplicatedCatalog;
+using Studium_Booking.Services.Clients;
 using Studium_Booking.Services.DTOs;
+using Wolverine;
 
 namespace Studium_Booking.Services.Handlers;
 
@@ -11,6 +14,8 @@ namespace Studium_Booking.Services.Handlers;
 /// </summary>
 public class SpaceAvailabilitySyncHandler(
     BookingDbContext db,
+    IMessageBus messageBus,
+    INotificationsClient notificationsClient,
     ILogger<SpaceAvailabilitySyncHandler> logger)
 {
     public async Task HandleAsync(RoomStatusChangedEvent message, CancellationToken ct = default)
@@ -70,6 +75,43 @@ public class SpaceAvailabilitySyncHandler(
 
             logger.LogInformation("Maintenance scheduled on room {RoomId}: {Start} - {End}",
                 message.RoomId, message.StartsAtUtc, message.EndsAtUtc);
+
+            // Cascading cancellation: cancel active overlapping bookings and notify students
+            var conflictingBookings = await db.Bookings
+                .Where(b => b.RoomId == message.RoomId &&
+                            (b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.CheckedIn) &&
+                            b.TimeSlot.StartsAtUtc < message.EndsAtUtc &&
+                            b.TimeSlot.EndsAtUtc > message.StartsAtUtc)
+                .ToListAsync(ct);
+
+            foreach (var booking in conflictingBookings)
+            {
+                booking.Cancel($"Room maintenance scheduled: {message.Reason}", message.OccurredAtUtc, "System", isAdmin: true);
+
+                await messageBus.PublishAsync(new UserActivityIntegrationEvent(
+                    UserActivityType.ReservationCancelled,
+                    booking.UserId,
+                    booking.Id.ToString(),
+                    message.OccurredAtUtc));
+
+                await messageBus.PublishAsync(new AuditIntegrationEvent(
+                    ServiceSource: "Booking",
+                    ResourceId: booking.Id.ToString(),
+                    ActorId: "System",
+                    Action: "BookingCancelledDueToMaintenance",
+                    MetadataJson: $"{{\"reason\":\"{message.Reason}\",\"maintenanceBlockId\":\"{message.MaintenanceBlockId}\"}}",
+                    TimestampUtc: message.OccurredAtUtc));
+
+                await notificationsClient.SendAsync(new CreateNotificationRequest(
+                    UserId: booking.UserId,
+                    Type: "ROOM_MAINTENANCE_SCHEDULED",
+                    Title: "Reserva Cancelada por Manutenção",
+                    Message: $"Sua reserva '{booking.Title}' na sala {message.RoomCode} foi cancelada devido a manutenção programada: {message.Reason}",
+                    Data: new { bookingId = booking.Id, roomId = message.RoomId, maintenanceBlockId = message.MaintenanceBlockId }), ct);
+
+                logger.LogWarning("Cancelled conflicting reservation {BookingId} for User {UserId} due to maintenance in Room {RoomId}.",
+                    booking.Id, booking.UserId, message.RoomId);
+            }
         }
         else if (message.EventType == RoomMaintenanceEventType.MaintenanceCancelled)
         {

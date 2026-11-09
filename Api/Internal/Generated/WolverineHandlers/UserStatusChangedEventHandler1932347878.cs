@@ -2,6 +2,8 @@
 #pragma warning disable
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Net.Http;
 
 namespace Internal.Generated.WolverineHandlers
 {
@@ -10,23 +12,30 @@ namespace Internal.Generated.WolverineHandlers
     public sealed class UserStatusChangedEventHandler1932347878 : Wolverine.Runtime.Handlers.MessageHandler
     {
         private readonly Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> _dbContextOptionsOfBookingDbContext;
+        private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Clients.NotificationsClient> _loggerOfNotificationsClient;
         private readonly Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.UserEligibilitySyncHandler> _loggerOfUserEligibilitySyncHandler;
+        private readonly Microsoft.Extensions.Options.IOptions<Studium_Booking.Services.Options.BookingOptions> _optionsOfBookingOptions;
+        private readonly System.Net.Http.IHttpClientFactory _httpClientFactory;
 
-        public UserStatusChangedEventHandler1932347878(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.UserEligibilitySyncHandler> loggerOfUserEligibilitySyncHandler)
+        public UserStatusChangedEventHandler1932347878(Microsoft.EntityFrameworkCore.DbContextOptions<Studium_Booking.Data.BookingDbContext> dbContextOptionsOfBookingDbContext, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Clients.NotificationsClient> loggerOfNotificationsClient, Microsoft.Extensions.Logging.ILogger<Studium_Booking.Services.Handlers.UserEligibilitySyncHandler> loggerOfUserEligibilitySyncHandler, Microsoft.Extensions.Options.IOptions<Studium_Booking.Services.Options.BookingOptions> optionsOfBookingOptions, System.Net.Http.IHttpClientFactory httpClientFactory)
         {
             _dbContextOptionsOfBookingDbContext = dbContextOptionsOfBookingDbContext;
+            _loggerOfNotificationsClient = loggerOfNotificationsClient;
             _loggerOfUserEligibilitySyncHandler = loggerOfUserEligibilitySyncHandler;
+            _optionsOfBookingOptions = optionsOfBookingOptions;
+            _httpClientFactory = httpClientFactory;
         }
 
         public override async System.Threading.Tasks.Task HandleAsync(Wolverine.Runtime.MessageContext context, System.Threading.CancellationToken cancellation)
         {
+            var notificationsClient = new Studium_Booking.Services.Clients.NotificationsClient(_httpClientFactory, _loggerOfNotificationsClient);
             await using var bookingDbContext = new Studium_Booking.Data.BookingDbContext(_dbContextOptionsOfBookingDbContext);
             // The actual message body
             var userStatusChangedEvent = (Studium_Booking.Services.DTOs.UserStatusChangedEvent)context.Envelope.Message;
 
             Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("message.handler", "Studium_Booking.Services.Handlers.UserEligibilitySyncHandler");
             Wolverine.Runtime.WolverineTracing.MessageActivity(context.Envelope)?.SetTag("handler.type", "Studium_Booking.Services.Handlers.UserEligibilitySyncHandler");
-            var userEligibilitySyncHandler = new Studium_Booking.Services.Handlers.UserEligibilitySyncHandler(bookingDbContext, _loggerOfUserEligibilitySyncHandler);
+            var userEligibilitySyncHandler = new Studium_Booking.Services.Handlers.UserEligibilitySyncHandler(bookingDbContext, context, notificationsClient, _optionsOfBookingOptions, _loggerOfUserEligibilitySyncHandler);
             
             // The actual message execution
             await userEligibilitySyncHandler.HandleAsync(userStatusChangedEvent, cancellation).ConfigureAwait(false);
