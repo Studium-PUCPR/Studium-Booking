@@ -141,6 +141,26 @@ namespace Studium_Booking.Data.Migrations
                     b.ToTable("BookingAuditLogs", (string)null);
                 });
 
+            modelBuilder.Entity("Studium_Booking.Domain.Entities.Inbox.InboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("HandlerName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<DateTime>("ReceivedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceivedAtUtc");
+
+                    b.ToTable("InboxMessages", (string)null);
+                });
+
             modelBuilder.Entity("Studium_Booking.Domain.Entities.ReplicatedCatalog.ReplicatedMaintenanceBlock", b =>
                 {
                     b.Property<Guid>("Id")

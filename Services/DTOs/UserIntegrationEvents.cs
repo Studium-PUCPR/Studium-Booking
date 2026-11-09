@@ -10,5 +10,6 @@ public record UserStatusChangedEvent(
     string UserId,
     bool IsBlocked,
     string? BlockReason,
-    DateTime OccurredAtUtc
+    DateTime OccurredAtUtc,
+    Guid? EventId = null
 );

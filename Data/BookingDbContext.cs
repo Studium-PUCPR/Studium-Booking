@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Studium_Booking.Domain.Entities.Bookings;
+using Studium_Booking.Domain.Entities.Inbox;
 using Studium_Booking.Domain.Entities.ReplicatedCatalog;
 using Studium_Booking.Domain.Entities.Users;
 using Studium_Booking.Domain.Entities.Waitlist;
@@ -15,6 +16,7 @@ public class BookingDbContext(DbContextOptions<BookingDbContext> options) : DbCo
     public DbSet<ReplicatedRoom> ReplicatedRooms => Set<ReplicatedRoom>();
     public DbSet<ReplicatedMaintenanceBlock> ReplicatedMaintenanceBlocks => Set<ReplicatedMaintenanceBlock>();
     public DbSet<ReplicatedOperatingHours> ReplicatedOperatingHours => Set<ReplicatedOperatingHours>();
+    public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

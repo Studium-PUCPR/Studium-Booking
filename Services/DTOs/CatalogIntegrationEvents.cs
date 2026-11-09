@@ -51,7 +51,8 @@ public record RoomMaintenanceEvent(
     DateTime StartsAtUtc,
     DateTime EndsAtUtc,
     string Reason,
-    DateTime OccurredAtUtc
+    DateTime OccurredAtUtc,
+    Guid? EventId = null
 );
 
 [MessageIdentity("studium.catalog.operating-hours-changed")]
@@ -59,14 +60,16 @@ public record OperatingHoursChangedEvent(
     Guid RoomId,
     string TimeZone,
     IReadOnlyList<OperatingHoursDto> OperatingHours,
-    DateTime OccurredAtUtc
+    DateTime OccurredAtUtc,
+    Guid? EventId = null
 );
 
 [MessageIdentity("studium.catalog.room-status-changed")]
 public record RoomStatusChangedEvent(
     Guid RoomId,
     bool IsActive,
-    DateTime OccurredAtUtc
+    DateTime OccurredAtUtc,
+    Guid? EventId = null
 );
 
 [MessageIdentity("studium.catalog.resource-updated")]
@@ -78,5 +81,6 @@ public record ResourceUpdatedEvent(
     ResourceType Type,
     int Quantity,
     ResourceStatus Status,
-    DateTime OccurredAtUtc
+    DateTime OccurredAtUtc,
+    Guid? EventId = null
 );

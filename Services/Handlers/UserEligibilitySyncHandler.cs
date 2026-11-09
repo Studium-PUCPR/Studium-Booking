@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Studium_Booking.Data;
 using Studium_Booking.Domain.Entities.Bookings;
+using Studium_Booking.Domain.Entities.Inbox;
 using Studium_Booking.Domain.Entities.Users;
 using Studium_Booking.Domain.Entities.Waitlist;
 using Studium_Booking.Services.Clients;
@@ -23,8 +24,21 @@ public class UserEligibilitySyncHandler(
     IOptions<BookingOptions> options,
     ILogger<UserEligibilitySyncHandler> logger)
 {
+    private static DateTime _lastPrunedUtc = DateTime.MinValue;
+    private static readonly object _pruneLock = new();
+
     public async Task HandleAsync(UserStatusChangedEvent message, CancellationToken ct = default)
     {
+        if (message.EventId.HasValue)
+        {
+            var alreadyProcessed = await db.InboxMessages.AnyAsync(m => m.Id == message.EventId.Value, ct);
+            if (alreadyProcessed)
+            {
+                logger.LogWarning("Inbox: UserStatusChangedEvent {EventId} for user {UserId} already processed. Skipping.",
+                    message.EventId.Value, message.UserId);
+                return;
+            }
+        }
         var user = await db.BlockedUsers.FirstOrDefaultAsync(u => u.UserId == message.UserId, ct);
         if (user is null)
         {
@@ -93,8 +107,29 @@ public class UserEligibilitySyncHandler(
             }
         }
 
+        if (message.EventId.HasValue)
+        {
+            db.InboxMessages.Add(new InboxMessage(message.EventId.Value, nameof(UserEligibilitySyncHandler), DateTime.UtcNow));
+        }
+
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Updated BlockedUser record for User {UserId}: IsBlocked={IsBlocked}, Reason={Reason}",
             message.UserId, message.IsBlocked, message.BlockReason);
+
+        // Throttled lazy cleanup of inbox records older than 7 days (runs once every 6 hours)
+        if (DateTime.UtcNow - _lastPrunedUtc > TimeSpan.FromHours(6))
+        {
+            lock (_pruneLock)
+            {
+                if (DateTime.UtcNow - _lastPrunedUtc > TimeSpan.FromHours(6))
+                {
+                    _lastPrunedUtc = DateTime.UtcNow;
+                    var cutoff = DateTime.UtcNow.AddDays(-7);
+                    _ = db.InboxMessages
+                        .Where(m => m.ReceivedAtUtc < cutoff)
+                        .ExecuteDeleteAsync(CancellationToken.None);
+                }
+            }
+        }
     }
 }

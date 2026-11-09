@@ -121,7 +121,8 @@ public class BookingsController(
             UserActivityType.ReservationCreated,
             userId,
             booking.Id.ToString(),
-            nowUtc));
+            nowUtc,
+            EventId: Guid.NewGuid()));
 
         await messageBus.PublishAsync(new AuditIntegrationEvent(
             ServiceSource: "Booking",
@@ -129,7 +130,8 @@ public class BookingsController(
             ActorId: userId,
             Action: "BookingCreated",
             MetadataJson: $"{{\"title\":\"{booking.Title}\",\"roomId\":\"{booking.RoomId}\"}}",
-            TimestampUtc: nowUtc));
+            TimestampUtc: nowUtc,
+            EventId: Guid.NewGuid()));
 
         await notificationsClient.SendAsync(new CreateNotificationRequest(
             UserId: userId,
@@ -278,7 +280,8 @@ public class BookingsController(
             UserActivityType.ReservationCheckedIn,
             booking.UserId,
             booking.Id.ToString(),
-            nowUtc));
+            nowUtc,
+            EventId: Guid.NewGuid()));
 
         await messageBus.PublishAsync(new AuditIntegrationEvent(
             ServiceSource: "Booking",
@@ -286,7 +289,8 @@ public class BookingsController(
             ActorId: booking.UserId,
             Action: "BookingCheckedIn",
             MetadataJson: $"{{\"roomId\":\"{booking.RoomId}\"}}",
-            TimestampUtc: nowUtc));
+            TimestampUtc: nowUtc,
+            EventId: Guid.NewGuid()));
 
         logger.LogInformation("Reservation {BookingId} checked in successfully at {Time}.", id, nowUtc);
         return Ok(ToDto(booking));
@@ -315,7 +319,8 @@ public class BookingsController(
             ActorId: currentUserId,
             Action: "BookingCheckedOut",
             MetadataJson: $"{{\"roomId\":\"{booking.RoomId}\"}}",
-            TimestampUtc: nowUtc));
+            TimestampUtc: nowUtc,
+            EventId: Guid.NewGuid()));
 
         logger.LogInformation("Reservation {BookingId} checked out successfully at {Time}.", id, nowUtc);
         return Ok(ToDto(booking));
@@ -345,7 +350,8 @@ public class BookingsController(
             UserActivityType.ReservationCancelled,
             booking.UserId,
             booking.Id.ToString(),
-            nowUtc));
+            nowUtc,
+            EventId: Guid.NewGuid()));
 
         await messageBus.PublishAsync(new AuditIntegrationEvent(
             ServiceSource: "Booking",
@@ -353,7 +359,8 @@ public class BookingsController(
             ActorId: currentUserId,
             Action: "BookingCancelled",
             MetadataJson: $"{{\"reason\":\"{request.Reason}\"}}",
-            TimestampUtc: nowUtc));
+            TimestampUtc: nowUtc,
+            EventId: Guid.NewGuid()));
 
         await notificationsClient.SendAsync(new CreateNotificationRequest(
             UserId: booking.UserId,
@@ -439,7 +446,8 @@ public class BookingsController(
             UserActivityType.NoShowRecorded,
             booking.UserId,
             booking.Id.ToString(),
-            nowUtc));
+            nowUtc,
+            EventId: Guid.NewGuid()));
 
         await messageBus.PublishAsync(new AuditIntegrationEvent(
             ServiceSource: "Booking",
@@ -447,7 +455,8 @@ public class BookingsController(
             ActorId: currentUserId,
             Action: "NoShowRecorded",
             MetadataJson: $"{{\"roomId\":\"{booking.RoomId}\"}}",
-            TimestampUtc: nowUtc));
+            TimestampUtc: nowUtc,
+            EventId: Guid.NewGuid()));
 
         await notificationsClient.SendAsync(new CreateNotificationRequest(
             UserId: booking.UserId,

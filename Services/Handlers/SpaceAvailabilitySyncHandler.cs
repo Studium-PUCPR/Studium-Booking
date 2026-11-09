@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Studium_Booking.Data;
 using Studium_Booking.Domain.Entities.Bookings;
+using Studium_Booking.Domain.Entities.Inbox;
 using Studium_Booking.Domain.Entities.ReplicatedCatalog;
 using Studium_Booking.Services.Clients;
 using Studium_Booking.Services.DTOs;
@@ -18,8 +19,50 @@ public class SpaceAvailabilitySyncHandler(
     INotificationsClient notificationsClient,
     ILogger<SpaceAvailabilitySyncHandler> logger)
 {
+    private static DateTime _lastPrunedUtc = DateTime.MinValue;
+    private static readonly object _pruneLock = new();
+
+    private async Task<bool> IsDuplicateEventAsync(Guid? eventId, CancellationToken ct)
+    {
+        if (!eventId.HasValue) return false;
+        var exists = await db.InboxMessages.AnyAsync(m => m.Id == eventId.Value, ct);
+        if (exists)
+        {
+            logger.LogWarning("Inbox: event {EventId} already processed in SpaceAvailabilitySyncHandler. Skipping.", eventId.Value);
+        }
+        return exists;
+    }
+
+    private void RecordInboxMessage(Guid? eventId)
+    {
+        if (eventId.HasValue)
+        {
+            db.InboxMessages.Add(new InboxMessage(eventId.Value, nameof(SpaceAvailabilitySyncHandler), DateTime.UtcNow));
+        }
+    }
+
+    private void TriggerThrottledLazyPruning()
+    {
+        if (DateTime.UtcNow - _lastPrunedUtc > TimeSpan.FromHours(6))
+        {
+            lock (_pruneLock)
+            {
+                if (DateTime.UtcNow - _lastPrunedUtc > TimeSpan.FromHours(6))
+                {
+                    _lastPrunedUtc = DateTime.UtcNow;
+                    var cutoff = DateTime.UtcNow.AddDays(-7);
+                    _ = db.InboxMessages
+                        .Where(m => m.ReceivedAtUtc < cutoff)
+                        .ExecuteDeleteAsync(CancellationToken.None);
+                }
+            }
+        }
+    }
+
     public async Task HandleAsync(RoomStatusChangedEvent message, CancellationToken ct = default)
     {
+        if (await IsDuplicateEventAsync(message.EventId, ct)) return;
+
         var room = await db.ReplicatedRooms
             .FirstOrDefaultAsync(r => r.Id == message.RoomId, ct);
 
@@ -38,13 +81,18 @@ public class SpaceAvailabilitySyncHandler(
             room.UpdateStatus(message.IsActive, message.OccurredAtUtc);
         }
 
+        RecordInboxMessage(message.EventId);
         await db.SaveChangesAsync(ct);
+        TriggerThrottledLazyPruning();
+
         logger.LogInformation("Replicated room {RoomId} status updated to IsActive={IsActive}.",
             message.RoomId, message.IsActive);
     }
 
     public async Task HandleAsync(RoomMaintenanceEvent message, CancellationToken ct = default)
     {
+        if (await IsDuplicateEventAsync(message.EventId, ct)) return;
+
         var room = await db.ReplicatedRooms
             .Include(r => r.MaintenanceBlocks)
             .FirstOrDefaultAsync(r => r.Id == message.RoomId, ct);
@@ -92,7 +140,8 @@ public class SpaceAvailabilitySyncHandler(
                     UserActivityType.ReservationCancelled,
                     booking.UserId,
                     booking.Id.ToString(),
-                    message.OccurredAtUtc));
+                    message.OccurredAtUtc,
+                    EventId: Guid.NewGuid()));
 
                 await messageBus.PublishAsync(new AuditIntegrationEvent(
                     ServiceSource: "Booking",
@@ -100,7 +149,8 @@ public class SpaceAvailabilitySyncHandler(
                     ActorId: "System",
                     Action: "BookingCancelledDueToMaintenance",
                     MetadataJson: $"{{\"reason\":\"{message.Reason}\",\"maintenanceBlockId\":\"{message.MaintenanceBlockId}\"}}",
-                    TimestampUtc: message.OccurredAtUtc));
+                    TimestampUtc: message.OccurredAtUtc,
+                    EventId: Guid.NewGuid()));
 
                 await notificationsClient.SendAsync(new CreateNotificationRequest(
                     UserId: booking.UserId,
@@ -121,11 +171,15 @@ public class SpaceAvailabilitySyncHandler(
                 message.MaintenanceBlockId, message.RoomId);
         }
 
+        RecordInboxMessage(message.EventId);
         await db.SaveChangesAsync(ct);
+        TriggerThrottledLazyPruning();
     }
 
     public async Task HandleAsync(OperatingHoursChangedEvent message, CancellationToken ct = default)
     {
+        if (await IsDuplicateEventAsync(message.EventId, ct)) return;
+
         var room = await db.ReplicatedRooms
             .Include(r => r.OperatingHours)
             .FirstOrDefaultAsync(r => r.Id == message.RoomId, ct);
@@ -150,16 +204,23 @@ public class SpaceAvailabilitySyncHandler(
                 o.ClosesAt));
 
         room.SetOperatingHours(hours, message.OccurredAtUtc);
+        RecordInboxMessage(message.EventId);
         await db.SaveChangesAsync(ct);
+        TriggerThrottledLazyPruning();
 
         logger.LogInformation("Replaced operating hours for room {RoomId} ({Count} windows).",
             message.RoomId, message.OperatingHours.Count);
     }
 
-    public Task HandleAsync(ResourceUpdatedEvent message, CancellationToken ct = default)
+    public async Task HandleAsync(ResourceUpdatedEvent message, CancellationToken ct = default)
     {
+        if (await IsDuplicateEventAsync(message.EventId, ct)) return;
+
         logger.LogInformation("Received ResourceUpdatedEvent: {EventType} on Room {RoomId} for Resource {Name}",
             message.EventType, message.RoomId, message.Name);
-        return Task.CompletedTask;
+
+        RecordInboxMessage(message.EventId);
+        await db.SaveChangesAsync(ct);
+        TriggerThrottledLazyPruning();
     }
 }

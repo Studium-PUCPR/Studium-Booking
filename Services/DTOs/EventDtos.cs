@@ -18,7 +18,8 @@ public record UserActivityIntegrationEvent(
     UserActivityType EventType,
     string UserId,
     string? ActivityReferenceId,
-    DateTime OccurredAtUtc
+    DateTime OccurredAtUtc,
+    Guid? EventId = null
 );
 
 /// <summary>
@@ -31,7 +32,8 @@ public record AuditIntegrationEvent(
     string ActorId,
     string Action,
     string? MetadataJson = null,
-    DateTime? TimestampUtc = null
+    DateTime? TimestampUtc = null,
+    Guid? EventId = null
 );
 
 /// <summary>
