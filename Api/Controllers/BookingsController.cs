@@ -40,6 +40,11 @@ public class BookingsController(
             throw new UserBlockedException("User account is currently blocked from making reservations.");
 
         var timeSlot = new ReservationTimeSlot(request.StartsAtUtc, request.EndsAtUtc);
+
+        // Small tolerance so a reservation for "now" picked in HH:mm granularity is still accepted.
+        if (timeSlot.StartsAtUtc < nowUtc.AddMinutes(-5))
+            throw new DomainException("START_IN_PAST", "Reservation start time cannot be in the past.");
+
         var duration = timeSlot.Duration;
         var isProfessorOrAdmin = User.IsAdmin() || User.IsInRole("Professor");
 

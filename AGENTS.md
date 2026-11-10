@@ -63,6 +63,10 @@
 ---
 
 ## 3. Recent Changes History
+- **2026-11-10 (Reject Past Reservations & Cancel In-Progress Bookings on Suspension):**
+  - `CreateBooking` now rejects a start time more than 5 minutes in the past (`START_IN_PAST`, 400). Before, a reservation for an hour that had already passed was accepted.
+  - `UserEligibilitySyncHandler` now cancels every `Confirmed` booking that has not yet ended (`EndsAtUtc > OccurredAtUtc`), not only those that start after the block. Before, an in-progress reservation was skipped, so neither the cancellation nor the REST notification happened.
+  - Verified 28/28 unit tests pass.
 - **2026-11-09 (Transactional Inbox Pattern & EventId Propagation):**
   - Added `InboxMessage` entity and configuration with B-Tree index on `ReceivedAtUtc`.
   - Scaffolded EF Core migration `20261109222820_Add_InboxMessages`.

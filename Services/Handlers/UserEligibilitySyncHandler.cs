@@ -55,7 +55,7 @@ public class UserEligibilitySyncHandler(
             var upcomingBookings = await db.Bookings
                 .Where(b => b.UserId == message.UserId &&
                             b.Status == BookingStatus.Confirmed &&
-                            b.TimeSlot.StartsAtUtc > message.OccurredAtUtc)
+                            b.TimeSlot.EndsAtUtc > message.OccurredAtUtc)
                 .ToListAsync(ct);
 
             foreach (var booking in upcomingBookings)
